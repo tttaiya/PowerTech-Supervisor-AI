@@ -1,0 +1,26 @@
+groups:
+  - name: oncall-demo-alerts
+    rules:
+      - alert: CPUHighUsage
+        expr: vector(1)
+        for: 0m
+        labels:
+          severity: warning
+          service: order-service
+          instance: order-service-1
+          job: order-service
+        annotations:
+          summary: order-service CPU 使用率过高
+          description: order-service CPU 使用率持续高于 90%
+
+      - alert: SlowResponse
+        expr: vector(1)
+        for: 0m
+        labels:
+          severity: critical
+          service: payment-service
+          instance: payment-service-1
+          job: payment-service
+        annotations:
+          summary: payment-service 响应时间过长
+          description: payment-service P95 响应时间超过 3s

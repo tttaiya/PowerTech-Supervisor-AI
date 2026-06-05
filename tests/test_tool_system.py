@@ -82,19 +82,3 @@ def test_prometheus_alert_tool_falls_back_to_demo_alerts(monkeypatch):
     assert '"success": true' in result
     assert "demo_fallback" in result
     assert "CPUHighUsage" in result
-
-
-def test_prometheus_alert_tool_uses_demo_alerts_for_default_local_url(monkeypatch):
-    from app.tools import query_metrics_alerts
-
-    monkeypatch.setattr(query_metrics_alerts.config, "prometheus_base_url", "http://127.0.0.1:9090")
-
-    def fail_if_called():
-        raise AssertionError("default local demo should not call Prometheus HTTP API")
-
-    monkeypatch.setattr(query_metrics_alerts, "query_prometheus_alerts_api", fail_if_called)
-
-    result = query_metrics_alerts.query_prometheus_alerts.invoke({})
-
-    assert "demo_fallback" in result
-    assert "SlowResponse" in result

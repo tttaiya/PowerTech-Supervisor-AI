@@ -228,11 +228,6 @@ def query_prometheus_alerts() -> str:
     Returns:
         str: JSON 字符串。成功时含告警列表与状态统计；失败时含 success=false 与 error。
     """
-    base_url = config.prometheus_base_url.rstrip("/")
-    if base_url in {"http://127.0.0.1:9090", "http://localhost:9090"}:
-        out = _build_demo_alerts_fallback("default local Prometheus endpoint is not configured")
-        return json.dumps(out, ensure_ascii=False, indent=2)
-
     result, err = query_prometheus_alerts_api()
     if err:
         out = _build_demo_alerts_fallback(err)
