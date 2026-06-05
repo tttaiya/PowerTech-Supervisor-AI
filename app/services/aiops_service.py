@@ -3,12 +3,14 @@
 基于 LangGraph 官方教程实现
 """
 
+import uuid
 from typing import AsyncGenerator, Dict, Any
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from loguru import logger
 
 from app.agent.aiops import PlanExecuteState, planner, executor, replanner
+from app.models.trace import ToolCallRecord, now_iso
 from app.services.trace_service import trace_service
 
 
@@ -62,13 +64,14 @@ class AIOpsService:
 
             # 计划为空但没有响应，返回 replanner 生成响应
             logger.info("计划执行完毕，生成最终响应")
-            return END
+            return NODE_REPLANNER
 
         workflow.add_conditional_edges(
             NODE_REPLANNER,
             should_continue,
             {
                 NODE_EXECUTOR: NODE_EXECUTOR,
+                NODE_REPLANNER: NODE_REPLANNER,
                 END: END
             }
         )
@@ -142,17 +145,7 @@ class AIOpsService:
                         formatted_event = self._format_planner_event(node_output)
 
                     elif node_name == NODE_EXECUTOR:
-                        for step, result in node_output.get("past_steps", []):
-                            result_text = str(result)
-                            trace.executor_steps.append(
-                                {
-                                    "step": step,
-                                    "result_preview": result_text[:500],
-                                    "result_length": len(result_text),
-                                }
-                            )
-                        if node_output.get("past_steps"):
-                            trace_service.save_trace(trace)
+                        self._record_executor_trace(trace_service, trace, node_output)
                         formatted_event = self._format_executor_event(node_output)
 
                     elif node_name == NODE_REPLANNER:
@@ -205,6 +198,47 @@ class AIOpsService:
                 "trace_id": trace.trace_id,
                 "message": f"任务执行出错: {str(e)}"
             }
+
+    def _record_executor_trace(self, trace_service, trace, node_output: Dict[str, Any]) -> None:
+        """把 Executor 输出里的步骤结果和工具调用摘要写入 trace。"""
+        for step, result in node_output.get("past_steps", []):
+            step_index = len(trace.executor_steps) + 1
+            result_text = str(result)
+            output_summary = result_text
+            tool_calls = []
+
+            if isinstance(result, dict):
+                output_summary = str(result.get("result", ""))
+                tool_calls = result.get("tool_calls", []) or []
+                result_text = output_summary or result_text
+
+            trace.executor_steps.append(
+                {
+                    "step": step,
+                    "result_preview": result_text[:500],
+                    "result_length": len(result_text),
+                    "tool_calls": tool_calls,
+                }
+            )
+
+            for tool_call in tool_calls:
+                trace_service.record_tool_call(
+                    trace,
+                    ToolCallRecord(
+                        tool_call_id=f"tool_{uuid.uuid4().hex[:10]}",
+                        trace_id=trace.trace_id,
+                        step_index=step_index,
+                        tool_name=tool_call.get("name", "unknown"),
+                        input_args=tool_call.get("args", {}) or {},
+                        output_summary=output_summary[:800],
+                        latency_ms=None,
+                        status="success",
+                        created_at=now_iso(),
+                    ),
+                )
+
+        if node_output.get("past_steps"):
+            trace_service.save_trace(trace)
 
     async def diagnose(
         self,

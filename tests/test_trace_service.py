@@ -80,3 +80,38 @@ def test_trace_service_records_node_and_tool_call(tmp_path):
     assert saved["node_records"][0]["output_snapshot"]["plan"] == ["step 1"]
     assert saved["tool_calls"][0]["tool_name"] == "retrieve_knowledge"
     assert saved["tool_calls"][0]["status"] == "success"
+
+
+def test_aiops_service_records_executor_tool_calls_from_step_result(tmp_path):
+    from app.services.aiops_service import AIOpsService
+
+    service = AIOpsService()
+    trace_service = TraceService(base_dir=str(tmp_path))
+    trace = trace_service.create_trace("s5", "diagnose alerts")
+
+    service._record_executor_trace(
+        trace_service=trace_service,
+        trace=trace,
+        node_output={
+            "past_steps": [
+                (
+                    "查询当前活跃告警",
+                    {
+                        "result": "已获取 1 条告警",
+                        "tool_calls": [
+                            {
+                                "name": "query_prometheus_alerts",
+                                "args": {},
+                            }
+                        ],
+                    },
+                )
+            ]
+        },
+    )
+
+    saved = json.loads(trace_service.get_trace_path(trace.trace_id, trace.started_at).read_text(encoding="utf-8"))
+    assert saved["executor_steps"][0]["step"] == "查询当前活跃告警"
+    assert saved["executor_steps"][0]["tool_calls"][0]["name"] == "query_prometheus_alerts"
+    assert saved["tool_calls"][0]["tool_name"] == "query_prometheus_alerts"
+    assert saved["tool_calls"][0]["output_summary"] == "已获取 1 条告警"

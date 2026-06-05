@@ -135,7 +135,9 @@ async def replanner(state: PlanExecuteState) -> Dict[str, Any]:
             api_key=config.dashscope_api_key,
             temperature=0
         )
-        return await _generate_response(state, llm)
+        result = await _generate_response(state, llm)
+        result["replanner_action"] = "respond"
+        return result
 
     # 获取可用工具列表
     try:

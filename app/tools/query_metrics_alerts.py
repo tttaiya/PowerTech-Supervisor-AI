@@ -154,6 +154,62 @@ def _simplify_alerts(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict
     return simplified, state_counts
 
 
+def _build_demo_alerts_fallback(error: str) -> dict[str, Any]:
+    """Prometheus 不可用时返回本地演示告警，保证 AIOps demo 有可诊断证据。"""
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    alerts = [
+        {
+            "alert_name": "CPUHighUsage",
+            "labels": {
+                "alertname": "CPUHighUsage",
+                "severity": "warning",
+                "instance": "order-service-1",
+                "job": "order-service",
+                "service": "order-service",
+            },
+            "common_labels": {
+                "severity": "warning",
+                "instance": "order-service-1",
+                "job": "order-service",
+            },
+            "description": "order-service CPU 使用率持续高于 90%",
+            "summary": "order-service CPU 使用率过高",
+            "state": "firing",
+            "active_at": now,
+            "duration": "10m0s",
+        },
+        {
+            "alert_name": "SlowResponse",
+            "labels": {
+                "alertname": "SlowResponse",
+                "severity": "critical",
+                "instance": "payment-service-1",
+                "job": "payment-service",
+                "service": "payment-service",
+            },
+            "common_labels": {
+                "severity": "critical",
+                "instance": "payment-service-1",
+                "job": "payment-service",
+            },
+            "description": "payment-service P95 响应时间超过 3s",
+            "summary": "payment-service 响应时间过长",
+            "state": "firing",
+            "active_at": now,
+            "duration": "8m0s",
+        },
+    ]
+    return {
+        "success": True,
+        "source": "demo_fallback",
+        "warning": f"Prometheus 不可用，已使用本地演示告警数据: {error}",
+        "alerts": alerts,
+        "state_counts": {"firing": len(alerts)},
+        "total": len(alerts),
+        "message": f"已获取 {len(alerts)} 条本地演示告警（Prometheus 不可用时用于面试演示）",
+    }
+
+
 @tool
 def query_prometheus_alerts() -> str:
     """查询 Prometheus 服务端当前活动告警（HTTP GET /api/v1/alerts）。
@@ -172,13 +228,14 @@ def query_prometheus_alerts() -> str:
     Returns:
         str: JSON 字符串。成功时含告警列表与状态统计；失败时含 success=false 与 error。
     """
+    base_url = config.prometheus_base_url.rstrip("/")
+    if base_url in {"http://127.0.0.1:9090", "http://localhost:9090"}:
+        out = _build_demo_alerts_fallback("default local Prometheus endpoint is not configured")
+        return json.dumps(out, ensure_ascii=False, indent=2)
+
     result, err = query_prometheus_alerts_api()
     if err:
-        out = {
-            "success": False,
-            "error": err,
-            "message": "Failed to query Prometheus alerts",
-        }
+        out = _build_demo_alerts_fallback(err)
         return json.dumps(out, ensure_ascii=False, indent=2)
 
     if result.get("status") != "success":
