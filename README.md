@@ -368,5 +368,3 @@ npm run dev
 本 README 按当前知识管理项目的整合代码结构编写，覆盖网关、`km-admin-service`、`km-search-service`、`km-worker-service`、FastAPI AI 文档处理服务、Vue 前端及相关中间件。
 
 具体端口、配置文件名、部署 profile、镜像标签和前端目录名称以仓库中的 `docker-compose.yml`、Nacos 配置、`application.yml`、`vite.config.*` 与各模块构建文件为最终依据。
-#   P o w e r T e c h - S u p e r v i s o r - A I  
- 
