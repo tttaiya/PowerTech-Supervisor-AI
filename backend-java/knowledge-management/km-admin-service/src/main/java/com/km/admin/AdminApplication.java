@@ -52,8 +52,8 @@ import java.util.concurrent.TimeUnit;
 @MapperScan({
     "com.km.admin.review.mapper",
     "com.km.admin.document.mapper",
-    "com.km.admin.config",            // F6：钱小晓配置模块（commit #15；ConfigMapper.java 在 com.km.admin.config 包）
-    "com.km.admin.knowledgebase.mapper" // F2：邱子悦知识库管理（commit #28；KnowledgeBaseMapper.java 迁入新包）
+    "com.km.admin.config.mapper",
+    "com.km.admin.knowledgebase.mapper"
 })
 public class AdminApplication {
     public static void main(String[] args) {

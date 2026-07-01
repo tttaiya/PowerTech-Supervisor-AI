@@ -2,6 +2,7 @@ package com.km.admin.config;
 
 import com.km.admin.config.dto.EmbeddingConfigDTO;
 import com.km.admin.config.dto.ParserConfigDTO;
+import com.km.admin.config.mapper.ConfigMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;

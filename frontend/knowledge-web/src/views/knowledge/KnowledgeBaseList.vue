@@ -122,7 +122,7 @@ async function reload() {
       total.value = 0
       return
     }
-    rows.value = (resp.data.list || []).map((r) => ({ ...r, _isDeleted: r._isDeleted }))
+    rows.value = (resp.data.list || []).map((r) => ({ ...r, _isDeleted: r._isDeleted ?? false }))
     total.value = resp.data.total
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || e?.message || '查询失败')

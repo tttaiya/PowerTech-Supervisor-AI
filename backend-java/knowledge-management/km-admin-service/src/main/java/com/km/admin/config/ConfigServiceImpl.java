@@ -1,6 +1,7 @@
 package com.km.admin.config;
 
 import com.km.admin.config.dto.ConnectionTestRequest;
+import com.km.admin.config.mapper.ConfigMapper;
 import com.km.admin.config.dto.ConnectionTestResult;
 import com.km.admin.config.dto.EmbeddingConfigDTO;
 import com.km.admin.config.dto.ParserConfigDTO;

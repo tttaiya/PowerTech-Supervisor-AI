@@ -16,7 +16,7 @@ const request: AxiosInstance = axios.create({
   timeout: 30000,
 })
 
-request.interceptors.request.use((config: AxiosRequestConfig) => {
+request.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = window.localStorage.getItem('access_token')
     if (token && config.headers) {

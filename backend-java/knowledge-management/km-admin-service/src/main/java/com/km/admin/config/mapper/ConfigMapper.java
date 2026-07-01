@@ -1,4 +1,4 @@
-package com.km.admin.config;
+package com.km.admin.config.mapper;
 
 import com.km.admin.config.dto.ConnectionTestRequest;
 import com.km.admin.config.dto.ConnectionTestResult;
