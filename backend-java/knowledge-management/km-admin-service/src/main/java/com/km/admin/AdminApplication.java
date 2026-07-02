@@ -6,11 +6,15 @@ import com.km.admin.task.dto.CreateProcessTaskRequest;
 import com.km.admin.task.dto.CreateReembedTaskRequest;
 import com.km.admin.task.dto.CreateReviewReprocessTaskRequest;
 import com.rabbitmq.client.Channel;
+import org.apache.ibatis.annotations.Mapper;
 import org.mybatis.spring.annotation.MapperScan;
+import org.mybatis.spring.annotation.MapperScans;
 import org.springframework.amqp.rabbit.annotation.EnableRabbit;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.core.MessageBuilder;
+import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
@@ -49,11 +53,13 @@ import java.util.concurrent.TimeUnit;
 @SpringBootApplication
 @EnableScheduling
 @EnableRabbit
-@MapperScan({
-    "com.km.admin.review.mapper",
-    "com.km.admin.document.mapper",
-    "com.km.admin.config.mapper",
-    "com.km.admin.knowledgebase.mapper"
+@MapperScans({
+    @MapperScan({
+        "com.km.admin.review.mapper",
+        "com.km.admin.document.mapper",
+        "com.km.admin.knowledgebase.mapper"
+    }),
+    @MapperScan(value = "com.km.admin.config", annotationClass = Mapper.class)
 })
 public class AdminApplication {
     public static void main(String[] args) {
@@ -156,11 +162,64 @@ class TaskCommandService {
         return createWithQuota(cmd);
     }
 
-    public Long createReembedTask(Long docId, Long chunkId, String operatorUserId, Long chunkContentVersion) {
-        CreateTaskCommand cmd = new CreateTaskCommand("REEMBED", docId, operatorUserId, "REVIEW_EDIT");
+    @Transactional(rollbackFor = Exception.class)
+    public Long createReembedTask(Long docId, Long chunkId, String operatorUserId,
+                                  Long requestedContentVersion) {
+        if (docId == null || chunkId == null) {
+            throw new IllegalArgumentException("docId and chunkId must not be null");
+        }
+
+        Map<String, Object> chunk = findActiveChunkForReembed(docId, chunkId);
+        Long kbId = toLong(chunk.get("kbId"));
+        Long versionNo = toLong(chunk.get("versionNo"));
+        Long chunkIndex = toLong(chunk.get("chunkIndex"));
+        Long contentVersion = toLong(chunk.get("contentVersion"));
+        String content = toText(chunk.get("content"));
+        String vectorId = toText(chunk.get("vectorId"));
+
+        if (kbId == null || versionNo == null || versionNo < 1
+                || chunkIndex == null || chunkIndex < 1
+                || contentVersion == null || contentVersion < 1) {
+            throw new IllegalStateException("Invalid REEMBED chunk metadata: chunkId=" + chunkId);
+        }
+        if (requestedContentVersion != null
+                && !requestedContentVersion.equals(contentVersion)) {
+            throw new IllegalStateException(
+                    "Chunk content version changed: requested=" + requestedContentVersion
+                            + ", actual=" + contentVersion);
+        }
+        if (content == null || content.trim().isEmpty()) {
+            throw new IllegalStateException("Chunk content is empty: chunkId=" + chunkId);
+        }
+        if (vectorId == null || vectorId.trim().isEmpty()) {
+            vectorId = "doc_" + docId + "_v_" + versionNo + "_idx_" + chunkIndex;
+        }
+
+        Map<String, Object> chunkPayload = new java.util.LinkedHashMap<String, Object>();
+        chunkPayload.put("chunkId", chunkId);
+        chunkPayload.put("docId", docId);
+        chunkPayload.put("kbId", kbId);
+        chunkPayload.put("versionNo", versionNo);
+        chunkPayload.put("chunkIndex", chunkIndex);
+        chunkPayload.put("content", content);
+        chunkPayload.put("chapterPath", chunk.get("chapterPath"));
+        chunkPayload.put("pageNo", chunk.get("pageNo"));
+
+        String chunkType = toText(chunk.get("chunkType"));
+        chunkPayload.put("chunkType",
+                chunkType == null || chunkType.trim().isEmpty() ? "paragraph" : chunkType);
+
+        Long charCount = toLong(chunk.get("charCount"));
+        chunkPayload.put("charCount", charCount == null ? content.length() : charCount);
+        chunkPayload.put("vectorId", vectorId);
+        chunkPayload.put("contentVersion", contentVersion);
+
+        CreateTaskCommand cmd = new CreateTaskCommand(
+                "REEMBED", docId, operatorUserId, "REVIEW_EDIT");
         cmd.payload.put("chunkId", chunkId);
-        cmd.payload.put("chunkContentVersion", chunkContentVersion);
-        cmd.idempotencyKey = "REEMBED:" + chunkId + ":" + chunkContentVersion;
+        cmd.payload.put("chunkContentVersion", contentVersion);
+        cmd.payload.put("chunks", Collections.singletonList(chunkPayload));
+        cmd.idempotencyKey = "REEMBED:" + chunkId + ":" + contentVersion;
         return txService.createTask(cmd);
     }
 
@@ -176,6 +235,21 @@ class TaskCommandService {
         cmd.strategyVersion = strategyVersion;
         cmd.payload.put("strategyVersion", strategyVersion);
         cmd.idempotencyKey = "REPROCESS:" + docId + ":" + strategyVersion;
+        return txService.createTask(cmd);
+    }
+
+    public Long createKnowledgeBaseReprocessTask(Long docId, Long strategyVersion, String operatorUserId,
+                                                 String triggerSource, String idempotencyKey,
+                                                 Map<String, Object> payload) {
+        CreateTaskCommand cmd = new CreateTaskCommand("REPROCESS", docId, operatorUserId, triggerSource);
+        cmd.strategyVersion = strategyVersion;
+        if (payload != null) {
+            cmd.payload.putAll(payload);
+        }
+        cmd.payload.put("operation", "REPROCESS");
+        cmd.payload.put("docId", docId);
+        cmd.payload.put("strategyVersion", strategyVersion);
+        cmd.idempotencyKey = idempotencyKey;
         return txService.createTask(cmd);
     }
 
@@ -202,6 +276,39 @@ class TaskCommandService {
         cmd.retryCount = failed.retryCount + 1;
         cmd.idempotencyKey = "RETRY:" + failed.id + ":" + cmd.retryCount;
         return createWithQuota(cmd);
+    }
+
+    private Map<String, Object> findActiveChunkForReembed(Long docId, Long chunkId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "select c.id as chunkId, c.doc_id as docId, d.kb_id as kbId, " +
+                        "c.version_no as versionNo, c.chunk_index as chunkIndex, " +
+                        "c.content as content, c.content_version as contentVersion, " +
+                        "c.chapter_path as chapterPath, c.page_no as pageNo, " +
+                        "c.chunk_type as chunkType, c.char_count as charCount, " +
+                        "c.vector_id as vectorId " +
+                        "from km_document_chunk c " +
+                        "join km_document d on d.id=c.doc_id " +
+                        "where c.id=? and c.doc_id=? and c.is_active=1 " +
+                        "and d.is_deleted=0 for update",
+                chunkId, docId);
+        if (rows.isEmpty()) {
+            throw new IllegalStateException(
+                    "Active chunk not found: docId=" + docId + ", chunkId=" + chunkId);
+        }
+        return rows.get(0);
+    }
+
+    private Long toLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        return value instanceof Number
+                ? ((Number) value).longValue()
+                : Long.valueOf(String.valueOf(value));
+    }
+
+    private String toText(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     private Long createWithQuota(CreateTaskCommand cmd) {
@@ -245,13 +352,15 @@ class TaskCommandTxService {
     @Transactional(rollbackFor = Exception.class)
     public Long createTask(CreateTaskCommand cmd) {
         Map<String, Object> doc = findDocumentForUpdate(cmd.docId);
-        Long targetVersionNo = null;
-        if ("REPROCESS".equals(cmd.taskType)) {
-            targetVersionNo = allocateBuildingVersion(cmd.docId, cmd.strategyVersion);
-        }
         TaskRow existing = findByIdempotencyKey(cmd.idempotencyKey);
         if (existing != null) {
             return existing.id;
+        }
+
+        Long targetVersionNo = null;
+        if ("REPROCESS".equals(cmd.taskType)) {
+            targetVersionNo = allocateBuildingVersion(cmd.docId, cmd.strategyVersion);
+            cmd.payload.put("targetVersionNo", targetVersionNo);
         }
 
         String payloadJson = toJson(cmd.payload);
@@ -284,6 +393,10 @@ class TaskCommandTxService {
             return ps;
         }, keyHolder);
         Long taskId = Objects.requireNonNull(keyHolder.getKey()).longValue();
+        if ("REPROCESS".equals(cmd.taskType) && finalTargetVersionNo != null) {
+            jdbcTemplate.update("update km_document_version set task_id=? where doc_id=? and version_no=?",
+                    taskId, cmd.docId, finalTargetVersionNo);
+        }
         KmTaskMessage msg = KmTaskMessage.from(taskId, cmd, doc, traceId, finalTargetVersionNo, payloadJson);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
@@ -366,7 +479,11 @@ class TaskDispatchPublisher {
         }
         try {
             CorrelationData cd = new CorrelationData("task-" + msg.taskId + "-" + System.currentTimeMillis());
-            rabbitTemplate.convertAndSend(exchange, routingKey, objectMapper.writeValueAsString(msg), cd);
+            rabbitTemplate.send(exchange, routingKey, MessageBuilder
+                    .withBody(objectMapper.writeValueAsBytes(msg))
+                    .setContentType(MessageProperties.CONTENT_TYPE_JSON)
+                    .setContentEncoding(StandardCharsets.UTF_8.name())
+                    .build(), cd);
             CorrelationData.Confirm confirm = cd.getFuture().get(10, TimeUnit.SECONDS);
             if (confirm != null && confirm.isAck()) {
                 jdbcTemplate.update("update km_document_process_task set dispatch_status='PUBLISHED', published_at=now(), updated_at=now() where id=? and task_status='QUEUED'",
@@ -500,9 +617,10 @@ class TaskResultConsumer {
             jdbcTemplate.update("update km_document set document_status='PENDING_REVIEW', updated_at=now() where id=?", msg.docId);
         } else if ("REPROCESS".equals(msg.taskType)) {
             insertChunks(msg, false);
-            switchVersion(msg);
-            jdbcTemplate.update("update km_document set document_status='PENDING_REVIEW', current_version_no=?, updated_at=now() where id=?",
-                    msg.targetVersionNo, msg.docId);
+            jdbcTemplate.update("update km_document_version set version_status='PENDING_REVIEW' where doc_id=? and version_no=?",
+                    msg.docId, msg.targetVersionNo);
+            jdbcTemplate.update("update km_document set document_status='READY', updated_at=now() where id=?",
+                    msg.docId);
         } else if ("REEMBED".equals(msg.taskType)) {
             Map<String, Object> payload = msg.taskPayloadJson == null ? Collections.emptyMap() : readMap(msg.taskPayloadJson);
             Object chunkId = payload.get("chunkId");
@@ -540,8 +658,13 @@ class TaskResultConsumer {
         jdbcTemplate.update("update km_document_process_task set task_status='FAILED', error_stage=?, error_message=?, finished_at=now(), last_event_seq=?, last_event_id=?, updated_at=now() where id=?",
                 msg.errorStage, msg.errorMessage, msg.eventSeq, msg.eventId, msg.taskId);
         if ("PROCESS".equals(msg.taskType) || "REPROCESS".equals(msg.taskType)) {
-            jdbcTemplate.update("update km_document set document_status='FAILED', error_stage=?, error_message=?, updated_at=now() where id=?",
-                    msg.errorStage, msg.errorMessage, msg.docId);
+            if ("REPROCESS".equals(msg.taskType)) {
+                jdbcTemplate.update("update km_document_version set version_status='FAILED' where doc_id=? and version_no=?",
+                        msg.docId, msg.targetVersionNo);
+            } else {
+                jdbcTemplate.update("update km_document set document_status='FAILED', error_stage=?, error_message=?, updated_at=now() where id=?",
+                        msg.errorStage, msg.errorMessage, msg.docId);
+            }
         }
         if ("PURGE".equals(msg.taskType)) {
             jdbcTemplate.update("insert into km_purge_audit(doc_id, task_id, purge_status, error_stage, error_message, created_at) values(?,?,'FAILED',?,?,now())",

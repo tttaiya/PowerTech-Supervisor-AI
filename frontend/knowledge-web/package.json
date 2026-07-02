@@ -5,7 +5,7 @@
   "description": "知识管理模块 Vue 子应用（R18：从 super-biz-agent 左侧菜单跳转）",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

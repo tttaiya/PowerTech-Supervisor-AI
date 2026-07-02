@@ -1,4 +1,5 @@
-import request, { Envelope } from '@/api/request'
+import request from '@/api/request'
+import type { Envelope } from '@/api/request'
 
 /**
  * F2 知识库管理 API 模块（commit #30 邱子悦前端整合）。
@@ -26,8 +27,10 @@ export interface KnowledgeBaseVO {
   createdByUserId?: string
   createdByName?: string
   strategyVersion: number
+  isDeleted?: number
   createdAt: string
   updatedAt?: string
+  _isDeleted?: number
 }
 
 export interface KnowledgeBaseDetailVO extends KnowledgeBaseVO {
@@ -69,6 +72,8 @@ export interface ReprocessResultVO {
   knowledgeBaseId: number
   taskId?: number | null
   readyDocumentCount: number
+  taskCount?: number
+  strategyVersion?: number
   message: string
   triggeredAt: string
 }
