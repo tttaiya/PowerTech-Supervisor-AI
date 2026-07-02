@@ -57,7 +57,8 @@ import java.util.concurrent.TimeUnit;
     @MapperScan({
         "com.km.admin.review.mapper",
         "com.km.admin.document.mapper",
-        "com.km.admin.knowledgebase.mapper"
+        "com.km.admin.knowledgebase.mapper",
+        "com.km.admin.stats.mapper"
     }),
     @MapperScan(value = "com.km.admin.config", annotationClass = Mapper.class)
 })
@@ -288,7 +289,10 @@ class TaskCommandService {
                         "c.vector_id as vectorId " +
                         "from km_document_chunk c " +
                         "join km_document d on d.id=c.doc_id " +
-                        "where c.id=? and c.doc_id=? and c.is_active=1 " +
+                        "where c.id=? and c.doc_id=? " +
+                        "and (c.is_active=1 or c.version_no=(" +
+                        "select max(v.version_no) from km_document_version v " +
+                        "where v.doc_id=c.doc_id and v.version_status='PENDING_REVIEW')) " +
                         "and d.is_deleted=0 for update",
                 chunkId, docId);
         if (rows.isEmpty()) {
