@@ -55,7 +55,7 @@
                 <!--
                     R18: 知识管理 / 报告生成业务入口
                     - 知识管理走 /knowledge/ 路径，Nginx 反代到 knowledge-web:80 容器
-                    - 报告生成是预留位（报告组后续合并），当前指向 /reports/ 占位
+                    - 报告生成走 /reports/ 路径，Nginx 反代到同一个 knowledge-web 容器
                 -->
                 <div class="sidebar-business-section">
                     <a class="sidebar-btn" href="/knowledge/bases">

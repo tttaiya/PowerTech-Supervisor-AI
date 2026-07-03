@@ -10,7 +10,9 @@ import type { RouteRecordRaw } from 'vue-router'
  * <p>路由守卫：无 access_token 跳回根路径（由 super-biz-agent 处理登录）。
  * 后端 Gateway 仍是最终鉴权入口，前端守卫只负责用户体验。
  */
-const routes: RouteRecordRaw[] = [
+const isReportEntry = typeof window !== 'undefined' && window.location.pathname.startsWith('/reports')
+
+const knowledgeRoutes: RouteRecordRaw[] = [
   {
     path: '/',
     redirect: '/bases',
@@ -60,15 +62,34 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/knowledge/StatisticsPage.vue'),
   },
   {
+    path: '/reports',
+    name: 'ReportWorkspace',
+    component: () => import('@/views/report/ReportWorkspace.vue'),
+    meta: { fullscreen: true },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('@/views/knowledge/NotFound.vue'),
   },
 ]
 
+const reportRoutes: RouteRecordRaw[] = [
+  {
+    path: '/',
+    name: 'ReportWorkspaceRoot',
+    component: () => import('@/views/report/ReportWorkspace.vue'),
+    meta: { fullscreen: true },
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/',
+  },
+]
+
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
-  routes,
+  history: createWebHistory(isReportEntry ? '/reports/' : '/knowledge/'),
+  routes: isReportEntry ? reportRoutes : knowledgeRoutes,
 })
 
 router.beforeEach((to, from, next) => {

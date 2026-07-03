@@ -4,7 +4,6 @@
     "strict": true,
     "sourceMap": true,
     "moduleResolution": "Node",
-    "ignoreDeprecations": "6.0",
     "types": ["node"],
     "paths": {
       "@/*": ["./src/*"]

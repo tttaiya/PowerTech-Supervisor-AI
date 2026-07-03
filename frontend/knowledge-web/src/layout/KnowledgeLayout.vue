@@ -45,6 +45,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/search')) return '/search'
   if (path.startsWith('/config')) return '/config'
   if (path.startsWith('/statistics')) return '/statistics'
+  if (path.startsWith('/reports')) return '/reports'
   return path
 })
 
