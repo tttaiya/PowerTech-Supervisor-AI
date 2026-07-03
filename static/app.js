@@ -82,37 +82,116 @@ class SuperBizAgentApp {
         await this.loadServerConversations();
     }
 
+    getUserLabel(user) {
+        if (!user) {
+            return '未登录';
+        }
+        return user.username || user.name || '已登录用户';
+    }
+
+    getUserInitials(label = '') {
+        const normalized = String(label || '').trim();
+        if (!normalized) {
+            return 'OC';
+        }
+        const source = normalized.includes('@') ? normalized.split('@')[0] : normalized;
+        return source.slice(0, 2).toUpperCase();
+    }
+
     updateAuthUI(user) {
-        const authUser = document.getElementById('authUser');
-        const adminLink = document.getElementById('adminLink');
-        if (authUser) authUser.textContent = user ? '' : '请登录后继续';
-        if (adminLink) adminLink.style.display = user ? 'inline-flex' : 'none';
-        if (this.loginScreen) this.loginScreen.style.display = user ? 'none' : 'flex';
-        if (this.appLayout) this.appLayout.style.display = user ? 'flex' : 'none';
+        const label = this.getUserLabel(user);
+        const authUser = this.authUser;
+        if (authUser) {
+            authUser.textContent = user
+                ? `已连接身份：${label}`
+                : '请登录后继续';
+        }
+        if (this.adminLink) {
+            this.adminLink.style.display = user ? 'inline-flex' : 'none';
+        }
+        if (this.sidebarUserName) {
+            this.sidebarUserName.textContent = user ? label : '未登录';
+        }
+        if (this.sidebarUserMeta) {
+            this.sidebarUserMeta.textContent = user
+                ? '权限已验证，可进入对话工作台'
+                : '等待身份验证';
+        }
+        if (this.sidebarUserAvatar) {
+            this.sidebarUserAvatar.textContent = this.getUserInitials(user ? label : 'OC');
+        }
+        if (this.workspaceStatus) {
+            this.workspaceStatus.textContent = user
+                ? `当前身份：${label}，可以直接开始知识问答`
+                : '知识问答、引用追踪与历史对话已就绪';
+        }
+        if (this.loginScreen) {
+            this.loginScreen.style.display = user ? 'none' : 'flex';
+        }
+        if (this.appLayout) {
+            this.appLayout.style.display = user ? 'flex' : 'none';
+        }
+        if (!user && this.usernameInput) {
+            requestAnimationFrame(() => this.usernameInput.focus());
+        }
+        if (user && this.messageInput) {
+            requestAnimationFrame(() => this.messageInput.focus());
+        }
     }
 
     async loginOrRegister(path) {
-        const username = document.getElementById('usernameInput')?.value.trim();
-        const password = document.getElementById('passwordInput')?.value;
+        const username = this.usernameInput?.value.trim();
+        const password = this.passwordInput?.value;
         if (!username || !password) {
             this.showNotification('请输入用户名和密码', 'warning');
             return;
         }
-        const response = await fetch(`/api/auth/${path}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
-        });
-        if (!response.ok) {
-            this.showNotification(path === 'login' ? '登录失败' : '注册失败', 'error');
-            return;
+
+        const primaryText = this.loginBtn?.textContent;
+        const secondaryText = this.registerBtn?.textContent;
+        if (this.loginBtn) this.loginBtn.disabled = true;
+        if (this.registerBtn) this.registerBtn.disabled = true;
+        if (this.loginBtn && path === 'login') this.loginBtn.textContent = '登录中...';
+        if (this.registerBtn && path === 'register') this.registerBtn.textContent = '注册中...';
+
+        try {
+            const response = await fetch(`/api/auth/${path}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            if (!response.ok) {
+                let errorMessage = path === 'login' ? '登录失败' : '注册失败';
+                try {
+                    const errorPayload = await response.json();
+                    if (errorPayload?.detail) {
+                        errorMessage = typeof errorPayload.detail === 'string'
+                            ? errorPayload.detail
+                            : errorMessage;
+                    }
+                } catch (error) {
+                    console.warn('读取认证错误详情失败:', error);
+                }
+                this.showNotification(errorMessage, 'error');
+                return;
+            }
+            if (path === 'register') {
+                await this.loginOrRegister('login');
+                return;
+            }
+            this.saveTokens(await response.json());
+            await this.loadCurrentUser();
+            this.showNotification('登录成功', 'success');
+        } finally {
+            if (this.loginBtn) {
+                this.loginBtn.disabled = false;
+                this.loginBtn.textContent = primaryText || '登录工作台';
+            }
+            if (this.registerBtn) {
+                this.registerBtn.disabled = false;
+                this.registerBtn.textContent = secondaryText || '注册并登录';
+            }
         }
-        if (path === 'register') {
-            return this.loginOrRegister('login');
-        }
-        this.saveTokens(await response.json());
-        await this.loadCurrentUser();
-        this.showNotification('登录成功', 'success');
     }
 
     async logout() {
@@ -129,6 +208,8 @@ class SuperBizAgentApp {
         this.sessionId = this.generateSessionId();
         this.resetCurrentProcessTracking();
         if (this.chatMessages) this.chatMessages.innerHTML = '';
+        if (this.usernameInput) this.usernameInput.value = '';
+        if (this.passwordInput) this.passwordInput.value = '';
         this.renderChatHistory();
         this.updateAuthUI(null);
         this.showNotification('已退出登录', 'success');
@@ -470,6 +551,14 @@ class SuperBizAgentApp {
         this.loginBtn = document.getElementById('loginBtn');
         this.registerBtn = document.getElementById('registerBtn');
         this.logoutBtn = document.getElementById('logoutBtn');
+        this.usernameInput = document.getElementById('usernameInput');
+        this.passwordInput = document.getElementById('passwordInput');
+        this.authUser = document.getElementById('authUser');
+        this.sidebarUserAvatar = document.getElementById('sidebarUserAvatar');
+        this.sidebarUserName = document.getElementById('sidebarUserName');
+        this.sidebarUserMeta = document.getElementById('sidebarUserMeta');
+        this.workspaceStatus = document.getElementById('workspaceStatus');
+        this.adminLink = document.getElementById('adminLink');
         
         // 输入区域元素
         this.messageInput = document.getElementById('messageInput');
@@ -513,6 +602,17 @@ class SuperBizAgentApp {
         if (this.logoutBtn) {
             this.logoutBtn.addEventListener('click', () => this.logout());
         }
+        [this.usernameInput, this.passwordInput].forEach((element) => {
+            if (!element) {
+                return;
+            }
+            element.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    this.loginOrRegister('login');
+                }
+            });
+        });
         
         // 兼容旧页面结构：如果存在模式选择器，也统一按流式思考处理。
         if (this.modeSelectorBtn) {
@@ -1676,36 +1776,14 @@ class SuperBizAgentApp {
 
     // 显示通知
     showNotification(message, type = 'info') {
-        // 创建通知元素
+        const existingNotifications = document.querySelectorAll('.notification');
+        existingNotifications.forEach((item) => item.remove());
+
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
         notification.textContent = message;
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 20px;
-            border-radius: 8px;
-            color: white;
-            font-weight: 500;
-            z-index: 10000;
-            animation: slideIn 0.3s ease;
-            max-width: 300px;
-        `;
-
-        // 根据类型设置颜色（Google Material Design配色）
-        const colors = {
-            info: '#1a73e8',
-            success: '#34a853',
-            warning: '#fbbc04',
-            error: '#ea4335'
-        };
-        notification.style.backgroundColor = colors[type] || colors.info;
-
-        // 添加到页面
         document.body.appendChild(notification);
 
-        // 3秒后自动移除
         setTimeout(() => {
             notification.style.animation = 'slideOut 0.3s ease';
             setTimeout(() => {
@@ -1753,33 +1831,6 @@ class SuperBizAgentApp {
     }
 
 }
-
-// 添加CSS动画
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideIn {
-        from {
-            transform: translateX(100%);
-            opacity: 0;
-        }
-        to {
-            transform: translateX(0);
-            opacity: 1;
-        }
-    }
-    
-    @keyframes slideOut {
-        from {
-            transform: translateX(0);
-            opacity: 1;
-        }
-        to {
-            transform: translateX(100%);
-            opacity: 0;
-        }
-    }
-`;
-document.head.appendChild(style);
 
 // 初始化应用
 document.addEventListener('DOMContentLoaded', () => {
