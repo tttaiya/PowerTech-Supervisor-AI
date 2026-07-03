@@ -1,147 +1,133 @@
-"""向量存储管理器 - 封装 Milvus VectorStore 操作"""
+"""向量存储管理器 - 基于 MilvusClient 封装检索与写入。"""
+
+from __future__ import annotations
 
 from typing import List
 
 from langchain_core.documents import Document
-from langchain_milvus import Milvus
 from loguru import logger
 
-from app.config import config
 from app.core.milvus_client import milvus_manager
 from app.services.vector_embedding_service import vector_embedding_service
 
 
-# 统一使用 biz collection
-COLLECTION_NAME = "biz"
+class _SimpleRetriever:
+    def __init__(self, manager: "VectorStoreManager", k: int):
+        self.manager = manager
+        self.k = k
+
+    def invoke(self, query: str) -> List[Document]:
+        return self.manager.similarity_search(query, k=self.k)
+
+
+class _SimpleVectorStoreFacade:
+    def __init__(self, manager: "VectorStoreManager"):
+        self.manager = manager
+
+    def as_retriever(self, search_kwargs: dict | None = None) -> _SimpleRetriever:
+        search_kwargs = search_kwargs or {}
+        return _SimpleRetriever(self.manager, int(search_kwargs.get("k", 3)))
 
 
 class VectorStoreManager:
-    """向量存储管理器"""
+    """向量存储管理器。"""
 
     def __init__(self):
-        """初始化向量存储管理器"""
-        self.vector_store = None
-        self.collection_name = COLLECTION_NAME
-        self._initialize_vector_store()
+        self.collection_name = milvus_manager.COLLECTION_NAME
 
-    def _initialize_vector_store(self):
-        """初始化 Milvus VectorStore"""
-        try:
-            # 必须在 PyMilvus / langchain_milvus 访问 Collection 之前建立连接，
-            # 否则会出现 ConnectionNotExistException: should create connection first.
-            # （模块导入时就会执行此处，早于 FastAPI lifespan 中的 milvus_manager.connect）
-            _ = milvus_manager.connect()
-
-            connection_args = {
-                "host": config.milvus_host,
-                "port": config.milvus_port,
-            }
-
-            # 创建 LangChain Milvus VectorStore
-            # 使用 biz collection，字段映射：text_field -> content, vector_field -> vector
-            self.vector_store = Milvus(
-                embedding_function=vector_embedding_service,
-                collection_name=self.collection_name,
-                connection_args=connection_args,
-                auto_id=False,  # 使用自定义 id
-                drop_old=False,
-                text_field="content",  # 文本内容存储到 content 字段
-                vector_field="vector",  # 向量存储到 vector 字段
-                primary_field="id",  # 主键字段
-                metadata_field="metadata",  # 元数据字段
-            )
-
-            logger.info(
-                f"VectorStore 初始化成功: {config.milvus_host}:{config.milvus_port}, "
-                f"collection: {self.collection_name}"
-            )
-
-        except Exception as e:
-            logger.error(f"VectorStore 初始化失败: {e}")
-            raise
+    def _ensure_connected(self) -> None:
+        milvus_manager.connect()
 
     def add_documents(self, documents: List[Document]) -> List[str]:
-        """
-        批量添加文档到向量存储（自动批量向量化）
-
-        Args:
-            documents: 文档列表
-
-        Returns:
-            List[str]: 文档 ID 列表
-        """
+        """批量添加文档到 Milvus。"""
         try:
+            self._ensure_connected()
             import time
             import uuid
+
             start_time = time.time()
-
-            # 为每个文档生成唯一 id（因为 auto_id=False）
             ids = [str(uuid.uuid4()) for _ in documents]
+            embeddings = vector_embedding_service.embed_documents([doc.page_content for doc in documents])
+            payload = []
 
-            # LangChain Milvus 的 add_documents 会自动调用 embedding_function
-            # 并进行批量处理，性能更好
-            result_ids = self.vector_store.add_documents(documents, ids=ids)
+            for doc, vector, doc_id in zip(documents, embeddings, ids, strict=False):
+                metadata = doc.metadata or {}
+                payload.append(
+                    {
+                        "id": doc_id,
+                        "chunk_id": metadata.get("chunk_id") or doc_id,
+                        "document_id": metadata.get("document_id") or "",
+                        "knowledge_base_id": metadata.get("knowledge_base_id") or "",
+                        "content": doc.page_content,
+                        "section_path": metadata.get("section_path") or "全文",
+                        "file_name": metadata.get("_file_name") or metadata.get("file_name") or "",
+                        "metadata": metadata,
+                        "vector": vector,
+                    }
+                )
 
+            milvus_manager.insert_rows(payload)
             elapsed = time.time() - start_time
             logger.info(
-                f"批量添加 {len(documents)} 个文档到 VectorStore 完成, "
+                f"批量添加 {len(documents)} 个文档到 Milvus 完成, "
                 f"耗时: {elapsed:.2f}秒, 平均: {elapsed/len(documents):.2f}秒/个"
             )
-            return result_ids
+            return ids
         except Exception as e:
             logger.error(f"添加文档失败: {e}")
             raise
 
     def delete_by_source(self, file_path: str) -> int:
-        """
-        删除指定文件的所有文档
-
-        Args:
-            file_path: 文件路径
-
-        Returns:
-            int: 删除的文档数量
-        """
+        """删除指定来源文件的所有文档。"""
         try:
-            # 使用 milvus_manager 获取已连接的 collection
-            collection = milvus_manager.get_collection()
-            
-            # metadata 是 JSON 字段，使用 JSON 路径查询语法
-            # _source 是文档的来源文件路径
+            self._ensure_connected()
             expr = f'metadata["_source"] == "{file_path}"'
-            
-            result = collection.delete(expr)
-            deleted_count = result.delete_count if hasattr(result, "delete_count") else 0
-            
+            deleted_count = milvus_manager.delete(filter_expr=expr)
             logger.info(f"删除文件旧数据: {file_path}, 删除数量: {deleted_count}")
             return deleted_count
-            
         except Exception as e:
             logger.warning(f"删除旧数据失败 (可能是首次索引): {e}")
             return 0
 
-    def get_vector_store(self) -> Milvus:
-        """
-        获取 VectorStore 实例
-
-        Returns:
-            Milvus: VectorStore 实例
-        """
-        return self.vector_store
+    def get_vector_store(self) -> _SimpleVectorStoreFacade:
+        """返回兼容旧调用方式的轻量 facade。"""
+        self._ensure_connected()
+        return _SimpleVectorStoreFacade(self)
 
     def similarity_search(self, query: str, k: int = 3) -> List[Document]:
-        """
-        相似度搜索
-
-        Args:
-            query: 查询文本
-            k: 返回结果数量
-
-        Returns:
-            List[Document]: 相关文档列表
-        """
+        """相似度搜索。"""
         try:
-            docs = self.vector_store.similarity_search(query, k=k)
+            self._ensure_connected()
+            query_vector = vector_embedding_service.embed_query(query)
+            rows = milvus_manager.search(
+                data=[query_vector],
+                limit=k,
+                search_params={"metric_type": "L2", "params": {"nprobe": 10}},
+                anns_field="vector",
+                output_fields=[
+                    "id",
+                    "chunk_id",
+                    "document_id",
+                    "knowledge_base_id",
+                    "content",
+                    "section_path",
+                    "file_name",
+                    "metadata",
+                ],
+            )
+            docs: List[Document] = []
+            for hits in rows:
+                for hit in hits:
+                    entity = hit.get("entity", {}) or {}
+                    metadata = dict(entity.get("metadata", {}) or {})
+                    metadata.setdefault("_file_name", entity.get("file_name", ""))
+                    metadata.setdefault("file_name", entity.get("file_name", ""))
+                    metadata.setdefault("section_path", entity.get("section_path", ""))
+                    metadata.setdefault("chunk_id", entity.get("chunk_id") or entity.get("id") or hit.get("id"))
+                    metadata.setdefault("document_id", entity.get("document_id", ""))
+                    metadata.setdefault("knowledge_base_id", entity.get("knowledge_base_id", ""))
+                    metadata["score"] = float(hit.get("distance", 0.0))
+                    docs.append(Document(page_content=entity.get("content", ""), metadata=metadata))
             logger.debug(f"相似度搜索完成: query='{query}', 结果数={len(docs)}")
             return docs
         except Exception as e:
@@ -149,5 +135,4 @@ class VectorStoreManager:
             return []
 
 
-# 全局单例
 vector_store_manager = VectorStoreManager()

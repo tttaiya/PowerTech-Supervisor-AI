@@ -3,8 +3,10 @@
 from typing import Any
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from app.config import config
 from app.core.milvus_client import milvus_manager
+from app.db.session import engine
 from loguru import logger
 
 router = APIRouter()
@@ -25,6 +27,23 @@ async def health_check():
         "version": config.app_version,
         "status": "healthy"
     }
+
+    # 检查业务数据库连接状态
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        health_data["database"] = {
+            "status": "connected",
+            "message": "业务数据库连接正常",
+            "url": engine.url.render_as_string(hide_password=True),
+        }
+    except Exception as e:
+        logger.warning(f"数据库健康检查失败: {e}")
+        health_data["database"] = {
+            "status": "error",
+            "message": f"业务数据库检查失败: {str(e)}",
+            "url": engine.url.render_as_string(hide_password=True),
+        }
     
     # 检查 Milvus 连接状态
     try:
@@ -47,7 +66,7 @@ async def health_check():
     status_code = 200
     
     # 如果 Milvus 不可用，服务不可用
-    if health_data["milvus"]["status"] != "connected":
+    if health_data["database"]["status"] != "connected" or health_data["milvus"]["status"] != "connected":
         overall_status = "unhealthy"
         status_code = 503
         health_data["error"] = "数据库不可用"

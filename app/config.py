@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     # DashScope 配置
     dashscope_api_key: str = ""  # 默认空字符串，实际使用需从环境变量加载
+    dashscope_api_base: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     dashscope_model: str = "qwen-max"
     dashscope_embedding_model: str = "text-embedding-v4"  # v4 支持多种维度（默认 1024）
 
@@ -52,6 +53,15 @@ class Settings(BaseSettings):
     # Prometheus
     prometheus_base_url: str = "http://127.0.0.1:9090"
     prometheus_request_timeout: float = 10.0
+
+    # Database / auth
+    database_url: str = "mysql+pymysql://biz_agent:biz_agent_pwd@127.0.0.1:3307/super_biz_agent?charset=utf8mb4"
+    database_pool_pre_ping: bool = True
+    database_pool_recycle: int = 3600
+    auth_secret_key: str = "change-me-in-production-super-biz-agent"
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 7
+    password_min_length: int = 6
 
     @property
     def mcp_servers(self) -> Dict[str, Dict[str, Any]]:

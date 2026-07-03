@@ -1,4 +1,4 @@
-"""AIOps trace 本地持久化服务。"""
+"""Agent trace 本地持久化服务。"""
 
 import json
 import uuid
@@ -12,7 +12,7 @@ from app.models.trace import NodeRecord, ToolCallRecord, TraceRecord, now_iso
 
 
 class TraceService:
-    """负责创建、更新并持久化 AIOps trace。"""
+    """负责创建、更新并持久化 Agent trace。"""
 
     def __init__(self, base_dir: str = "traces") -> None:
         self.base_dir = Path(base_dir)

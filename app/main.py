@@ -3,7 +3,7 @@
 主应用程序，配置路由、中间件、静态文件等
 """
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -12,8 +12,10 @@ import os
 
 from app.config import config
 from loguru import logger
-from app.api import aiops, bad_case, chat, file, health
+from app.api import admin_dashboard, admin_settings, auth, bad_case, chat, citations, conversations, file, health, knowledge_base
+from app.auth.permissions import require_login
 from app.core.milvus_client import milvus_manager
+from app.db.session import init_db
 
 
 @asynccontextmanager
@@ -21,24 +23,31 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时执行
     logger.info("=" * 60)
-    logger.info(f"🚀 {config.app_name} v{config.app_version} 启动中...")
-    logger.info(f"📝 环境: {'开发' if config.debug else '生产'}")
-    logger.info(f"🌐 监听地址: http://{config.host}:{config.port}")
-    logger.info(f"📚 API 文档: http://{config.host}:{config.port}/docs")
+    logger.info(f"{config.app_name} v{config.app_version} 启动中...")
+    logger.info(f"环境: {'开发' if config.debug else '生产'}")
+    logger.info(f"监听地址: http://{config.host}:{config.port}")
+    logger.info(f"API 文档: http://{config.host}:{config.port}/docs")
     
-    # 连接 Milvus
-    logger.info("🔌 正在连接 Milvus...")
-    milvus_manager.connect()
-    logger.info("✅ Milvus 连接成功")
+    init_db()
+    logger.info("数据库初始化完成")
+
+    # Milvus is still used by legacy RAG paths, but app startup should not fail
+    # in unit tests or local admin-only workflows when the service is absent.
+    try:
+        logger.info("正在连接 Milvus...")
+        milvus_manager.connect()
+        logger.info("Milvus 连接成功")
+    except Exception as exc:
+        logger.warning(f"Milvus 暂不可用，知识库检索将降级: {exc}")
     
     logger.info("=" * 60)
     
     yield
     
     # 关闭时执行
-    logger.info("🔌 正在关闭 Milvus 连接...")
+    logger.info("正在关闭 Milvus 连接...")
     milvus_manager.close()
-    logger.info(f"👋 {config.app_name} 关闭")
+    logger.info(f"{config.app_name} 关闭")
 
 
 # 创建 FastAPI 应用
@@ -60,10 +69,15 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(health.router, tags=["健康检查"])
+app.include_router(auth.router, prefix="/api", tags=["认证"])
+app.include_router(conversations.router, prefix="/api", tags=["会话"])
 app.include_router(chat.router, prefix="/api", tags=["对话"])
-app.include_router(file.router, prefix="/api", tags=["文件管理"])
-app.include_router(aiops.router, prefix="/api", tags=["AIOps智能运维"])
-app.include_router(bad_case.router, prefix="/api", tags=["BadCase复盘"])
+app.include_router(file.router, prefix="/api", tags=["文件管理"], dependencies=[Depends(require_login)])
+app.include_router(bad_case.router, prefix="/api", tags=["BadCase复盘"], dependencies=[Depends(require_login)])
+app.include_router(admin_settings.router, prefix="/api", tags=["系统配置"])
+app.include_router(knowledge_base.router, prefix="/api", tags=["知识库"])
+app.include_router(admin_dashboard.router, prefix="/api", tags=["运营统计"])
+app.include_router(citations.router, prefix="/api", tags=["引用"])
 
 # 挂载静态文件
 static_dir = "static"

@@ -1,7 +1,7 @@
 [project]
 name = "super-biz-agent-py"
 version = "1.2.1"
-description = "基于 LangChain 的智能业务代理系统 - 支持 RAG 知识库和 AIOps 智能运维"
+description = "基于 LangChain 的智能业务代理系统 - 支持 RAG 知识库和流式对话"
 authors = [{name = "chief"}]
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
     "sse-starlette>=2.1.0",
+    "sqlalchemy>=2.0.30",
     "langchain>=0.1.0",
     "langchain-community>=0.0.20",
     "langchain-core>=0.1.0",
@@ -25,6 +26,7 @@ dependencies = [
     "python-multipart>=0.0.6",
     "loguru>=0.7.2",
     "python-dotenv>=1.0.0",
+    "pymysql>=1.1.1",
     "langchain-milvus>=0.3.3",
     "langchain-text-splitters>=1.1.0",
     "langchain-mcp-adapters>=0.2.1",

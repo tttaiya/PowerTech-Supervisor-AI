@@ -73,6 +73,10 @@ traces/**
 badcases/**
 !badcases/.gitkeep
 
+# Temporary workspace data
+tmp/**
+!tmp/.gitkeep
+
 # OS
 .DS_Store
 Thumbs.db

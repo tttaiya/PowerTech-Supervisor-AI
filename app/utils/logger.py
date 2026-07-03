@@ -4,8 +4,22 @@
 """
 
 import sys
+
 from loguru import logger
+
 from app.config import config
+
+
+def _reconfigure_standard_streams() -> None:
+    """统一标准输出编码，避免 Windows GBK 控制台下写入 Unicode 失败。"""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="backslashreplace")
+            except Exception:
+                continue
 
 
 def setup_logger():
@@ -18,6 +32,7 @@ def setup_logger():
     """
     # 移除默认处理器
     logger.remove()
+    _reconfigure_standard_streams()
 
     # 添加控制台输出（带颜色格式）
     logger.add(

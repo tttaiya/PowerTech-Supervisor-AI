@@ -38,62 +38,14 @@
   {
     "id": "rag_007",
     "type": "rag",
-    "question": "AIOps 最终报告应该包含哪些证据？",
-    "expected_behavior": "回答告警、时间线、工具调用摘要、日志片段、指标异常、根因和处置建议。"
+    "question": "知识库问答的最终回答应该包含哪些证据？",
+    "expected_behavior": "回答应包含引用来源、关键片段、适用条件、不确定性说明和可操作建议。"
   },
   {
     "id": "rag_008",
     "type": "rag",
     "question": "知识库检索结果为空时应该如何降级？",
     "expected_behavior": "说明改写查询、扩大关键词、使用工具数据、提示不确定性和记录 bad case。"
-  },
-  {
-    "id": "aiops_001",
-    "type": "aiops",
-    "question": "触发 order-service CPUHighUsage 告警，请自动诊断。",
-    "expected_behavior": "生成计划，调用监控、日志、知识库工具，输出 trace_id 和最终诊断报告。"
-  },
-  {
-    "id": "aiops_002",
-    "type": "aiops",
-    "question": "payment-service 出现超时错误率升高，请定位根因。",
-    "expected_behavior": "围绕错误率、下游耗时、日志 timeout 证据执行多步诊断。"
-  },
-  {
-    "id": "aiops_003",
-    "type": "aiops",
-    "question": "inventory-worker 内存持续上涨，请分析是否可能泄漏。",
-    "expected_behavior": "查询内存趋势、OOM/GC 日志和知识库，给出泄漏或容量不足判断。"
-  },
-  {
-    "id": "aiops_004",
-    "type": "aiops",
-    "question": "网关 5xx 突增，但业务服务无明显异常，如何排查？",
-    "expected_behavior": "考虑网关、依赖、网络、限流配置和上游流量，避免单点臆断。"
-  },
-  {
-    "id": "aiops_005",
-    "type": "aiops",
-    "question": "服务恢复后要求输出完整复盘证据链。",
-    "expected_behavior": "基于 trace 汇总计划、执行步骤、工具证据、replan 决策和最终结论。"
-  },
-  {
-    "id": "aiops_006",
-    "type": "aiops",
-    "question": "日志工具返回大量重复 timeout 日志时如何处理？",
-    "expected_behavior": "进行上下文压缩，只保留关键错误、服务、时间和指标异常。"
-  },
-  {
-    "id": "aiops_007",
-    "type": "aiops",
-    "question": "某一步工具调用超时后 Agent 应如何继续？",
-    "expected_behavior": "记录失败类型，replanner 根据剩余证据调整计划或降级说明。"
-  },
-  {
-    "id": "aiops_008",
-    "type": "aiops",
-    "question": "如何证明 Agent 没有编造诊断结论？",
-    "expected_behavior": "要求结论绑定 trace、工具输出摘要、原始输出引用和证据片段。"
   },
   {
     "id": "exception_001",
@@ -116,13 +68,7 @@
   {
     "id": "exception_004",
     "type": "exception",
-    "question": "截图 OCR 文本缺字段时系统是否还能返回结果？",
-    "expected_behavior": "返回低置信度结构化结果，缺失字段置空，并生成可人工补充的诊断任务。"
-  },
-  {
-    "id": "screenshot_001",
-    "type": "screenshot",
-    "question": "上传包含 CPUHighUsage 的告警截图并生成诊断任务。",
-    "expected_behavior": "解析告警名称、服务、指标、当前值、阈值、时间范围和 diagnosis_task。"
+    "question": "流式接口返回非预期事件时前端应该如何处理？",
+    "expected_behavior": "跳过无法解析的事件或显示明确错误，不应把对象直接渲染成 [object Object]。"
   }
 ]

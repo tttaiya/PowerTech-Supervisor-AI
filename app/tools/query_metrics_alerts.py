@@ -155,7 +155,7 @@ def _simplify_alerts(result: dict[str, Any]) -> tuple[list[dict[str, Any]], dict
 
 
 def _build_demo_alerts_fallback(error: str) -> dict[str, Any]:
-    """Prometheus 不可用时返回本地演示告警，保证 AIOps demo 有可诊断证据。"""
+    """Prometheus 不可用时返回本地示例告警，保证监控问答仍有可读结果。"""
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     alerts = [
         {
@@ -202,11 +202,11 @@ def _build_demo_alerts_fallback(error: str) -> dict[str, Any]:
     return {
         "success": True,
         "source": "demo_fallback",
-        "warning": f"Prometheus 不可用，已使用本地演示告警数据: {error}",
+        "warning": f"Prometheus 不可用，已使用本地示例告警数据: {error}",
         "alerts": alerts,
         "state_counts": {"firing": len(alerts)},
         "total": len(alerts),
-        "message": f"已获取 {len(alerts)} 条本地演示告警（Prometheus 不可用时用于面试演示）",
+        "message": f"已获取 {len(alerts)} 条本地示例告警（Prometheus 不可用时用于本地验证）",
     }
 
 

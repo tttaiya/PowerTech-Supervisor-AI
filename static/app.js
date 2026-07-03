@@ -2,12 +2,21 @@
 class SuperBizAgentApp {
     constructor() {
         this.apiBaseUrl = 'http://localhost:9900/api';
-        this.currentMode = 'quick'; // 'quick' 或 'stream'
+        this.currentMode = 'stream';
         this.sessionId = this.generateSessionId();
         this.isStreaming = false;
+        this.abortController = null;
+        this.currentAssistantMessageId = null;
+        this.currentStreamingElement = null;
+        this.currentProcessPanel = null;
+        this.currentProcessSteps = new Map();
+        this.currentProcessStepData = [];
+        this.accessToken = localStorage.getItem('access_token') || '';
+        this.refreshToken = localStorage.getItem('refresh_token') || '';
         this.currentChatHistory = []; // 当前对话的消息历史
         this.chatHistories = this.loadChatHistories(); // 所有历史对话
         this.isCurrentChatFromHistory = false; // 标记当前对话是否是从历史记录加载的
+        this.citationCache = new Map();
         
         this.initializeElements();
         this.bindEvents();
@@ -15,6 +24,114 @@ class SuperBizAgentApp {
         this.initMarkdown();
         this.checkAndSetCentered();
         this.renderChatHistory();
+        this.loadCurrentUser();
+    }
+
+    async apiFetch(url, options = {}, retry = true) {
+        const headers = new Headers(options.headers || {});
+        if (this.accessToken) {
+            headers.set('Authorization', `Bearer ${this.accessToken}`);
+        }
+        if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+            headers.set('Content-Type', 'application/json');
+        }
+        const response = await fetch(url, { ...options, headers });
+        if (response.status === 401 && retry && this.refreshToken) {
+            const refreshResponse = await fetch('/api/auth/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: this.refreshToken })
+            });
+            if (refreshResponse.ok) {
+                this.saveTokens(await refreshResponse.json());
+                return this.apiFetch(url, options, false);
+            }
+        }
+        if (response.status === 401) {
+            this.clearTokens();
+            this.showNotification('请先登录', 'warning');
+        }
+        return response;
+    }
+
+    saveTokens(pair) {
+        this.accessToken = pair.access_token;
+        this.refreshToken = pair.refresh_token;
+        localStorage.setItem('access_token', this.accessToken);
+        localStorage.setItem('refresh_token', this.refreshToken);
+    }
+
+    clearTokens() {
+        this.accessToken = '';
+        this.refreshToken = '';
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+    }
+
+    async loadCurrentUser() {
+        if (!this.accessToken) {
+            this.updateAuthUI(null);
+            return;
+        }
+        const response = await this.apiFetch('/api/auth/me');
+        if (!response.ok) {
+            this.updateAuthUI(null);
+            return;
+        }
+        this.updateAuthUI(await response.json());
+        await this.loadServerConversations();
+    }
+
+    updateAuthUI(user) {
+        const authUser = document.getElementById('authUser');
+        const adminLink = document.getElementById('adminLink');
+        if (authUser) authUser.textContent = user ? '' : '请登录后继续';
+        if (adminLink) adminLink.style.display = user ? 'inline-flex' : 'none';
+        if (this.loginScreen) this.loginScreen.style.display = user ? 'none' : 'flex';
+        if (this.appLayout) this.appLayout.style.display = user ? 'flex' : 'none';
+    }
+
+    async loginOrRegister(path) {
+        const username = document.getElementById('usernameInput')?.value.trim();
+        const password = document.getElementById('passwordInput')?.value;
+        if (!username || !password) {
+            this.showNotification('请输入用户名和密码', 'warning');
+            return;
+        }
+        const response = await fetch(`/api/auth/${path}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        if (!response.ok) {
+            this.showNotification(path === 'login' ? '登录失败' : '注册失败', 'error');
+            return;
+        }
+        if (path === 'register') {
+            return this.loginOrRegister('login');
+        }
+        this.saveTokens(await response.json());
+        await this.loadCurrentUser();
+        this.showNotification('登录成功', 'success');
+    }
+
+    async logout() {
+        if (this.refreshToken) {
+            await fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: this.refreshToken })
+            }).catch(() => {});
+        }
+        this.clearTokens();
+        this.currentChatHistory = [];
+        this.chatHistories = [];
+        this.sessionId = this.generateSessionId();
+        this.resetCurrentProcessTracking();
+        if (this.chatMessages) this.chatMessages.innerHTML = '';
+        this.renderChatHistory();
+        this.updateAuthUI(null);
+        this.showNotification('已退出登录', 'success');
     }
 
     // 初始化Markdown配置
@@ -92,23 +209,274 @@ class SuperBizAgentApp {
         }
     }
 
+    cacheMessageCitations(messageId, citations = []) {
+        if (!messageId || !Array.isArray(citations) || citations.length === 0) {
+            return;
+        }
+        this.citationCache.set(messageId, citations);
+    }
+
+    buildHistoryMessage(type, content, options = {}) {
+        return {
+            type: type,
+            content: content,
+            timestamp: options.timestamp || new Date().toISOString(),
+            messageId: options.messageId || options.id || null,
+            citations: Array.isArray(options.citations) ? options.citations : [],
+            processSteps: this.normalizeProcessSteps(options.processSteps || options.process_steps || [])
+        };
+    }
+
+    normalizeHistoryMessage(message = {}) {
+        const rawType = message.type || (message.role === 'user' ? 'user' : 'assistant');
+        const type = rawType === 'bot' ? 'assistant' : rawType;
+        return this.buildHistoryMessage(type, message.content || '', {
+            timestamp: message.timestamp || message.created_at,
+            messageId: message.messageId || message.id,
+            citations: message.citations || [],
+            processSteps: message.processSteps || message.process_steps || []
+        });
+    }
+
+    normalizeProcessSteps(processSteps = []) {
+        if (!Array.isArray(processSteps)) {
+            return [];
+        }
+        return processSteps
+            .filter((step) => step && typeof step === 'object' && step.node)
+            .map((step) => ({
+                node: String(step.node),
+                status: String(step.status || 'running'),
+                message: String(step.message || '')
+            }));
+    }
+
+    recordCurrentProcessStep(node, status, message) {
+        if (!node) {
+            return;
+        }
+        const normalized = {
+            node: String(node),
+            status: String(status || 'running'),
+            message: String(message || '')
+        };
+        const existingIndex = this.currentProcessStepData.findIndex((step) => step.node === normalized.node);
+        if (existingIndex >= 0) {
+            this.currentProcessStepData.splice(existingIndex, 1, normalized);
+        } else {
+            this.currentProcessStepData.push(normalized);
+        }
+    }
+
+    snapshotCurrentProcessSteps() {
+        return this.normalizeProcessSteps(this.currentProcessStepData);
+    }
+
+    resetCurrentProcessTracking() {
+        this.currentProcessPanel = null;
+        this.currentProcessSteps = new Map();
+        this.currentProcessStepData = [];
+    }
+
+    decorateCitationMarkers(container, citations = [], messageId = '') {
+        if (!container || !Array.isArray(citations) || citations.length === 0) {
+            return;
+        }
+        const citationMap = new Map(citations.map(item => [Number(item.index), item]));
+        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+            acceptNode: (node) => {
+                if (!node.textContent || !/\[\d+\]/.test(node.textContent)) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                const parent = node.parentElement;
+                if (!parent || parent.closest('pre, code, .citation-link')) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        const textNodes = [];
+        while (walker.nextNode()) {
+            textNodes.push(walker.currentNode);
+        }
+
+        textNodes.forEach((node) => {
+            const text = node.textContent || '';
+            const pattern = /\[(\d+)\]/g;
+            const fragment = document.createDocumentFragment();
+            let cursor = 0;
+            let lastCitationKey = null;
+            let lastWasCitation = false;
+            let replaced = false;
+            let match;
+
+            while ((match = pattern.exec(text)) !== null) {
+                const leadingText = text.slice(cursor, match.index);
+                if (leadingText) {
+                    fragment.appendChild(document.createTextNode(leadingText));
+                    if (leadingText.trim()) {
+                        lastCitationKey = null;
+                        lastWasCitation = false;
+                    }
+                }
+
+                const citation = citationMap.get(Number(match[1]));
+                if (!citation) {
+                    fragment.appendChild(document.createTextNode(match[0]));
+                    lastCitationKey = null;
+                    lastWasCitation = false;
+                    cursor = match.index + match[0].length;
+                    continue;
+                }
+
+                const citationKey = `${citation.document_id || citation.document_name || 'unknown'}:${citation.chunk_id || citation.index}`;
+                const separatedOnlyByWhitespace = !leadingText || leadingText.trim() === '';
+                if (!(lastWasCitation && separatedOnlyByWhitespace && lastCitationKey === citationKey)) {
+                    fragment.appendChild(this.createCitationButton(citation, messageId));
+                    replaced = true;
+                }
+                lastCitationKey = citationKey;
+                lastWasCitation = true;
+                cursor = match.index + match[0].length;
+            }
+
+            const trailingText = text.slice(cursor);
+            if (trailingText) {
+                fragment.appendChild(document.createTextNode(trailingText));
+            }
+
+            if (replaced) {
+                node.parentNode.replaceChild(fragment, node);
+            }
+        });
+    }
+
+    createCitationButton(citation, messageId = '') {
+        const sup = document.createElement('sup');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'citation-link';
+        button.textContent = `[${citation.index}]`;
+        button.dataset.citationIndex = String(citation.index);
+        if (messageId) {
+            button.dataset.messageId = messageId;
+        }
+        sup.appendChild(button);
+        return sup;
+    }
+
+    async fetchMessageCitations(messageId) {
+        if (!messageId) {
+            return [];
+        }
+        if (this.citationCache.has(messageId)) {
+            return this.citationCache.get(messageId) || [];
+        }
+        const response = await this.apiFetch(`${this.apiBaseUrl}/messages/${messageId}/citations`);
+        if (!response.ok) {
+            throw new Error('获取引用详情失败');
+        }
+        const payload = await response.json();
+        const citations = payload.data || [];
+        this.cacheMessageCitations(messageId, citations);
+        return citations;
+    }
+
+    async handleCitationClick(button) {
+        const messageElement = button.closest('.message');
+        const messageId = button.dataset.messageId || messageElement?.dataset.messageId || '';
+        const citationIndex = Number(button.dataset.citationIndex || 0);
+        if (!messageId || !citationIndex) {
+            this.showNotification('当前引用详情暂不可用', 'warning');
+            return;
+        }
+
+        try {
+            const cached = messageElement?._citations || [];
+            const citations = cached.length ? cached : await this.fetchMessageCitations(messageId);
+            const citation = citations.find(item => Number(item.index) === citationIndex);
+            if (!citation) {
+                this.showNotification('未找到对应引用详情', 'warning');
+                return;
+            }
+            if (messageElement) {
+                messageElement._citations = citations;
+            }
+            this.showCitationModal(citation);
+        } catch (error) {
+            console.error('加载引用详情失败:', error);
+            this.showNotification(error.message || '加载引用详情失败', 'error');
+        }
+    }
+
+    showCitationModal(citation) {
+        if (!this.citationModal) {
+            return;
+        }
+        if (this.citationModalIndex) {
+            this.citationModalIndex.textContent = `[${citation.index}]`;
+        }
+        if (this.citationModalDoc) {
+            this.citationModalDoc.textContent = citation.document_name || '未知文档';
+        }
+        if (this.citationModalSection) {
+            this.citationModalSection.textContent = citation.section_path || '未标注章节';
+        }
+        if (this.citationModalVectorScore) {
+            this.citationModalVectorScore.textContent = this.formatCitationScore(citation.vector_score);
+        }
+        if (this.citationModalRerankScore) {
+            this.citationModalRerankScore.textContent = this.formatCitationScore(citation.rerank_score);
+        }
+        if (this.citationModalContent) {
+            this.citationModalContent.textContent = citation.content_preview || '暂无切片内容';
+        }
+        if (this.citationModalDownload) {
+            if (citation.download_url) {
+                this.citationModalDownload.href = citation.download_url;
+                this.citationModalDownload.style.display = 'inline-flex';
+            } else {
+                this.citationModalDownload.removeAttribute('href');
+                this.citationModalDownload.style.display = 'none';
+            }
+        }
+        this.citationModal.hidden = false;
+        document.body.classList.add('modal-open');
+    }
+
+    hideCitationModal() {
+        if (!this.citationModal) {
+            return;
+        }
+        this.citationModal.hidden = true;
+        document.body.classList.remove('modal-open');
+    }
+
+    formatCitationScore(score) {
+        if (score === null || score === undefined || score === '') {
+            return '暂无';
+        }
+        const numeric = Number(score);
+        return Number.isFinite(numeric) ? numeric.toFixed(4) : '暂无';
+    }
+
     // 初始化DOM元素
     initializeElements() {
         // 侧边栏元素
         this.sidebar = document.querySelector('.sidebar');
         this.newChatBtn = document.getElementById('newChatBtn');
-        this.aiOpsSidebarBtn = document.getElementById('aiOpsSidebarBtn');
+        this.loginScreen = document.getElementById('loginScreen');
+        this.appLayout = document.getElementById('appLayout');
+        this.loginBtn = document.getElementById('loginBtn');
+        this.registerBtn = document.getElementById('registerBtn');
+        this.logoutBtn = document.getElementById('logoutBtn');
         
         // 输入区域元素
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
-        this.toolsBtn = document.getElementById('toolsBtn');
-        this.toolsMenu = document.getElementById('toolsMenu');
-        this.uploadFileItem = document.getElementById('uploadFileItem');
         this.modeSelectorBtn = document.getElementById('modeSelectorBtn');
         this.modeDropdown = document.getElementById('modeDropdown');
         this.currentModeText = document.getElementById('currentModeText');
-        this.fileInput = document.getElementById('fileInput');
         
         // 聊天区域元素
         this.chatMessages = document.getElementById('chatMessages');
@@ -116,6 +484,15 @@ class SuperBizAgentApp {
         this.chatContainer = document.querySelector('.chat-container');
         this.welcomeGreeting = document.getElementById('welcomeGreeting');
         this.chatHistoryList = document.getElementById('chatHistoryList');
+        this.citationModal = document.getElementById('citationModal');
+        this.citationModalClose = document.getElementById('citationModalClose');
+        this.citationModalIndex = document.getElementById('citationModalIndex');
+        this.citationModalDoc = document.getElementById('citationModalDoc');
+        this.citationModalSection = document.getElementById('citationModalSection');
+        this.citationModalVectorScore = document.getElementById('citationModalVectorScore');
+        this.citationModalRerankScore = document.getElementById('citationModalRerankScore');
+        this.citationModalContent = document.getElementById('citationModalContent');
+        this.citationModalDownload = document.getElementById('citationModalDownload');
         
         // 初始化时检查是否需要居中
         this.checkAndSetCentered();
@@ -127,13 +504,17 @@ class SuperBizAgentApp {
         if (this.newChatBtn) {
             this.newChatBtn.addEventListener('click', () => this.newChat());
         }
-        
-        // AI Ops按钮
-        if (this.aiOpsSidebarBtn) {
-            this.aiOpsSidebarBtn.addEventListener('click', () => this.triggerAIOps());
+        if (this.loginBtn) {
+            this.loginBtn.addEventListener('click', () => this.loginOrRegister('login'));
+        }
+        if (this.registerBtn) {
+            this.registerBtn.addEventListener('click', () => this.loginOrRegister('register'));
+        }
+        if (this.logoutBtn) {
+            this.logoutBtn.addEventListener('click', () => this.logout());
         }
         
-        // 模式选择下拉菜单
+        // 兼容旧页面结构：如果存在模式选择器，也统一按流式思考处理。
         if (this.modeSelectorBtn) {
             this.modeSelectorBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -153,7 +534,8 @@ class SuperBizAgentApp {
         
         // 点击外部关闭下拉菜单
         document.addEventListener('click', (e) => {
-            if (!this.modeSelectorBtn.contains(e.target) && 
+            if (this.modeSelectorBtn && this.modeDropdown &&
+                !this.modeSelectorBtn.contains(e.target) &&
                 !this.modeDropdown.contains(e.target)) {
                 this.closeModeDropdown();
             }
@@ -165,64 +547,46 @@ class SuperBizAgentApp {
         }
         
         if (this.messageInput) {
-            this.messageInput.addEventListener('keypress', (e) => {
+            this.messageInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     this.sendMessage();
                 }
             });
-        }
-        
-        // 工具按钮和菜单
-        if (this.toolsBtn) {
-            this.toolsBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.toggleToolsMenu();
+            this.messageInput.addEventListener('input', () => {
+                this.messageInput.style.height = 'auto';
+                this.messageInput.style.height = `${Math.min(this.messageInput.scrollHeight, 180)}px`;
             });
         }
-        
-        // 工具菜单项点击事件
-        if (this.uploadFileItem) {
-            this.uploadFileItem.addEventListener('click', () => {
-                if (this.fileInput) {
-                    this.fileInput.click();
+
+        if (this.chatMessages) {
+            this.chatMessages.addEventListener('click', (e) => {
+                const citationButton = e.target.closest('.citation-link');
+                if (citationButton) {
+                    e.preventDefault();
+                    this.handleCitationClick(citationButton);
                 }
-                this.closeToolsMenu();
             });
         }
-        
-        // 点击外部关闭工具菜单
-        document.addEventListener('click', (e) => {
-            if (this.toolsBtn && this.toolsMenu && 
-                !this.toolsBtn.contains(e.target) && 
-                !this.toolsMenu.contains(e.target)) {
-                this.closeToolsMenu();
+
+        if (this.citationModal) {
+            this.citationModal.addEventListener('click', (e) => {
+                if (e.target.hasAttribute('data-close-citation')) {
+                    this.hideCitationModal();
+                }
+            });
+        }
+
+        if (this.citationModalClose) {
+            this.citationModalClose.addEventListener('click', () => this.hideCitationModal());
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.citationModal && !this.citationModal.hidden) {
+                this.hideCitationModal();
             }
         });
         
-        if (this.fileInput) {
-            this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
-        }
-    }
-
-    // 切换工具菜单显示/隐藏
-    toggleToolsMenu() {
-        if (this.toolsMenu && this.toolsBtn) {
-            const wrapper = this.toolsBtn.closest('.tools-btn-wrapper');
-            if (wrapper) {
-                wrapper.classList.toggle('active');
-            }
-        }
-    }
-
-    // 关闭工具菜单
-    closeToolsMenu() {
-        if (this.toolsMenu && this.toolsBtn) {
-            const wrapper = this.toolsBtn.closest('.tools-btn-wrapper');
-            if (wrapper) {
-                wrapper.classList.remove('active');
-            }
-        }
     }
 
     // 新建对话
@@ -254,6 +618,7 @@ class SuperBizAgentApp {
         
         // 清空当前对话历史
         this.currentChatHistory = [];
+        this.resetCurrentProcessTracking();
         
         // 重置标记
         this.isCurrentChatFromHistory = false;
@@ -266,8 +631,8 @@ class SuperBizAgentApp {
         // 生成新的会话ID
         this.sessionId = this.generateSessionId();
         
-        // 重置模式为快速
-        this.currentMode = 'quick';
+        // 默认使用“思考过程 + 流式回答”的统一模式。
+        this.currentMode = 'stream';
         this.updateUI();
         
         // 重新设置居中样式（确保对话框居中显示）
@@ -363,7 +728,22 @@ class SuperBizAgentApp {
             return [];
         }
     }
-    
+
+    async loadServerConversations() {
+        const response = await this.apiFetch('/api/conversations');
+        if (!response.ok) return;
+        const sessions = await response.json();
+        this.chatHistories = sessions.map(item => ({
+            id: item.id,
+            title: item.title,
+            messages: [],
+            createdAt: item.created_at,
+            updatedAt: item.updated_at
+        }));
+        this.saveChatHistories();
+        this.renderChatHistory();
+    }
+
     // 保存历史对话列表到localStorage
     saveChatHistories() {
         try {
@@ -439,7 +819,7 @@ class SuperBizAgentApp {
         
         try {
             // 从后端获取会话历史
-            const response = await fetch(`/api/chat/session/${historyId}`);
+            const response = await this.apiFetch(`/api/chat/session/${historyId}`);
             if (response.ok) {
                 const data = await response.json();
                 const backendHistory = data.history || [];
@@ -450,21 +830,20 @@ class SuperBizAgentApp {
                 
                 // 清空并重新渲染消息
                 if (this.chatMessages) {
+                    this.resetCurrentProcessTracking();
                     this.chatMessages.innerHTML = '';
                     
                     // 如果后端有历史记录，使用后端的
                     if (backendHistory.length > 0) {
-                        this.currentChatHistory = [];
-                        backendHistory.forEach(msg => {
-                            // 后端返回格式: {role: "user|assistant", content: "...", timestamp: "..."}
-                            const messageType = msg.role === 'user' ? 'user' : 'bot';
-                            this.addMessage(messageType, msg.content, false, false);
+                        this.currentChatHistory = backendHistory.map((msg) => this.normalizeHistoryMessage(msg));
+                        this.currentChatHistory.forEach((msg) => {
+                            this.addMessage(msg.type, msg.content, false, false, msg);
                         });
                     } else {
                         // 否则使用localStorage的历史记录
-                        this.currentChatHistory = [...history.messages];
-                        history.messages.forEach(msg => {
-                            this.addMessage(msg.type, msg.content, false, false);
+                        this.currentChatHistory = (history.messages || []).map((msg) => this.normalizeHistoryMessage(msg));
+                        this.currentChatHistory.forEach((msg) => {
+                            this.addMessage(msg.type, msg.content, false, false, msg);
                         });
                     }
                 }
@@ -472,13 +851,14 @@ class SuperBizAgentApp {
                 // 如果后端请求失败，使用localStorage的历史记录
                 console.warn('从后端加载历史失败，使用本地缓存');
                 this.sessionId = history.id;
-                this.currentChatHistory = [...history.messages];
+                this.currentChatHistory = (history.messages || []).map((msg) => this.normalizeHistoryMessage(msg));
                 this.isCurrentChatFromHistory = true;
                 
                 if (this.chatMessages) {
+                    this.resetCurrentProcessTracking();
                     this.chatMessages.innerHTML = '';
-                    history.messages.forEach(msg => {
-                        this.addMessage(msg.type, msg.content, false, false);
+                    this.currentChatHistory.forEach((msg) => {
+                        this.addMessage(msg.type, msg.content, false, false, msg);
                     });
                 }
             }
@@ -486,13 +866,14 @@ class SuperBizAgentApp {
             console.error('加载会话历史失败:', error);
             // 出错时使用localStorage的历史记录
             this.sessionId = history.id;
-            this.currentChatHistory = [...history.messages];
+            this.currentChatHistory = (history.messages || []).map((msg) => this.normalizeHistoryMessage(msg));
             this.isCurrentChatFromHistory = true;
             
             if (this.chatMessages) {
+                this.resetCurrentProcessTracking();
                 this.chatMessages.innerHTML = '';
-                history.messages.forEach(msg => {
-                    this.addMessage(msg.type, msg.content, false, false);
+                this.currentChatHistory.forEach((msg) => {
+                    this.addMessage(msg.type, msg.content, false, false, msg);
                 });
             }
         }
@@ -506,7 +887,7 @@ class SuperBizAgentApp {
     async deleteChatHistory(historyId) {
         try {
             // 调用后端API清空会话
-            const response = await fetch('/api/chat/clear', {
+            const response = await this.apiFetch('/api/chat/clear', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -579,8 +960,8 @@ class SuperBizAgentApp {
         this.updateUI();
         
         const modeNames = {
-            'quick': '快速',
-            'stream': '流式'
+            'quick': '思考',
+            'stream': '思考'
         };
         
         this.showNotification(`已切换到${modeNames[mode]}模式`, 'info');
@@ -591,10 +972,10 @@ class SuperBizAgentApp {
         // 更新模式选择器显示
         if (this.currentModeText) {
             const modeNames = {
-                'quick': '快速',
-                'stream': '流式'
+                'quick': '思考',
+                'stream': '思考'
             };
-            this.currentModeText.textContent = modeNames[this.currentMode] || '快速';
+            this.currentModeText.textContent = modeNames[this.currentMode] || '思考';
         }
         
         // 更新下拉菜单选中状态
@@ -610,7 +991,11 @@ class SuperBizAgentApp {
         
         // 更新发送按钮状态
         if (this.sendButton) {
-            this.sendButton.disabled = this.isStreaming;
+            this.sendButton.disabled = false;
+            this.sendButton.title = this.isStreaming ? '停止生成' : '发送';
+            this.sendButton.setAttribute('aria-label', this.isStreaming ? '停止生成' : '发送');
+            this.sendButton.classList.toggle('is-stopping', this.isStreaming);
+            this.setSendButtonIcon(this.isStreaming ? 'stop' : 'send');
         }
         
         // 更新输入框状态
@@ -620,6 +1005,179 @@ class SuperBizAgentApp {
         }
     }
 
+    setSendButtonIcon(state) {
+        if (!this.sendButton) return;
+        if (state === 'stop') {
+            this.sendButton.innerHTML = `
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/>
+                </svg>
+            `;
+            return;
+        }
+        this.sendButton.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        `;
+    }
+
+    getProcessNodeLabel(node) {
+        const labels = {
+            intent_detection: '意图识别',
+            terminology_matching: '术语匹配',
+            knowledge_retrieval: '知识库召回',
+            llm_call: '调用大模型',
+            answer_generation: '答案生成'
+        };
+        return labels[node] || node;
+    }
+
+    createProcessPanel(hostMessage = null, options = {}) {
+        const trackAsCurrent = options.trackAsCurrent !== false;
+        const panel = document.createElement('div');
+        panel.className = 'process-panel';
+        panel.innerHTML = `
+            <button class="process-panel-header" type="button">
+                <span>思考过程</span>
+                <span class="process-panel-toggle">折叠</span>
+            </button>
+            <div class="process-panel-body"></div>
+        `;
+        const header = panel.querySelector('.process-panel-header');
+        header.addEventListener('click', () => this.toggleProcessPanel(panel));
+        const wrapper = hostMessage?.querySelector('.message-content-wrapper');
+        if (wrapper) {
+            const messageContent = wrapper.querySelector('.message-content');
+            wrapper.insertBefore(panel, messageContent || null);
+        } else if (this.chatMessages) {
+            this.chatMessages.appendChild(panel);
+        }
+        panel._processStepRows = new Map();
+        this.scrollToBottom();
+        if (options.collapsed) {
+            this.collapseProcessPanel(panel);
+        }
+        if (trackAsCurrent) {
+            this.currentProcessPanel = panel;
+            this.currentProcessSteps = panel._processStepRows;
+            this.currentProcessStepData = [];
+        }
+        return panel;
+    }
+
+    attachProcessPanelToMessage(element) {
+        if (!this.currentProcessPanel || !element) return;
+        const wrapper = element.querySelector('.message-content-wrapper');
+        if (!wrapper) return;
+        wrapper.appendChild(this.currentProcessPanel);
+        this.scrollToBottom();
+    }
+
+    setAssistantMessageContent(messageElement, content, options = {}) {
+        if (!messageElement) return;
+        messageElement.classList.remove('streaming');
+        const messageId = options.messageId || options.id || messageElement.dataset.messageId || '';
+        const citations = Array.isArray(options.citations) ? options.citations : [];
+        if (messageId) {
+            messageElement.dataset.messageId = messageId;
+        }
+        messageElement._citations = citations;
+        this.cacheMessageCitations(messageId, citations);
+        const messageContent = messageElement.querySelector('.message-content');
+        if (!messageContent) return;
+        messageContent.innerHTML = this.renderMarkdown(content || '');
+        this.decorateCitationMarkers(messageContent, citations, messageId);
+        this.highlightCodeBlocks(messageContent);
+    }
+
+    toggleProcessPanel(panel = this.currentProcessPanel) {
+        if (!panel) return;
+        const collapsed = panel.classList.toggle('collapsed');
+        const toggle = panel.querySelector('.process-panel-toggle');
+        if (toggle) toggle.textContent = collapsed ? '展开' : '折叠';
+    }
+
+    collapseProcessPanel(panel = this.currentProcessPanel) {
+        if (!panel) return;
+        panel.classList.add('collapsed');
+        const toggle = panel.querySelector('.process-panel-toggle');
+        if (toggle) toggle.textContent = '展开';
+    }
+
+    updateProcessStep(node, status, message, options = {}) {
+        const panel = options.panel || this.currentProcessPanel || this.createProcessPanel(options.hostMessage || null);
+        const body = panel.querySelector('.process-panel-body');
+        if (!body) return;
+        const stepRegistry = options.stepRegistry || panel._processStepRows || this.currentProcessSteps;
+        let row = stepRegistry.get(node);
+        if (!row) {
+            row = document.createElement('div');
+            row.className = 'process-step';
+            row.innerHTML = `
+                <span class="process-step-dot"></span>
+                <div>
+                    <strong>${this.escapeHtml(this.getProcessNodeLabel(node))}</strong>
+                    <small></small>
+                </div>
+            `;
+            body.appendChild(row);
+            if (options.animate === false) {
+                row.classList.add('visible');
+            } else {
+                requestAnimationFrame(() => row.classList.add('visible'));
+            }
+            stepRegistry.set(node, row);
+        }
+        row.className = `process-step visible ${status || 'running'}`;
+        const detail = row.querySelector('small');
+        if (detail) detail.textContent = message || '';
+        if (panel === this.currentProcessPanel && !options.skipTracking) {
+            this.recordCurrentProcessStep(node, status, message);
+        }
+        this.scrollToBottom();
+    }
+
+    renderProcessPanelFromHistory(messageElement, processSteps = []) {
+        const normalizedSteps = this.normalizeProcessSteps(processSteps);
+        if (!messageElement || normalizedSteps.length === 0) {
+            return;
+        }
+        const panel = this.createProcessPanel(messageElement, { trackAsCurrent: false, collapsed: true });
+        const stepRegistry = panel._processStepRows || new Map();
+        normalizedSteps.forEach((step) => {
+            this.updateProcessStep(step.node, step.status, step.message, {
+                panel: panel,
+                stepRegistry: stepRegistry,
+                animate: false,
+                skipTracking: true
+            });
+        });
+    }
+
+    completeQuickProcess(chatResponse) {
+        const intent = chatResponse?.intent?.intent;
+        const panel = this.currentProcessPanel;
+        this.updateProcessStep('intent_detection', 'success', chatResponse?.intent?.reason || '已完成意图识别');
+        if (intent === 'knowledge_qa') {
+            this.updateProcessStep('terminology_matching', 'success', '已完成术语匹配');
+            this.updateProcessStep(
+                'knowledge_retrieval',
+                chatResponse.no_evidence ? 'warning' : 'success',
+                chatResponse.no_evidence ? '当前知识库未检索到足够依据' : '已完成知识库检索'
+            );
+            this.updateProcessStep(
+                'answer_generation',
+                'success',
+                chatResponse.is_knowledge_grounded ? '答案生成完成' : '答案生成完成，已标记为非知识库依据'
+            );
+        } else {
+            this.updateProcessStep('llm_call', 'success', '大模型调用完成');
+            this.updateProcessStep('answer_generation', 'success', '答案生成完成');
+        }
+        setTimeout(() => this.collapseProcessPanel(panel), 500);
+    }
+
     // 生成随机会话ID
     generateSessionId() {
         return 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
@@ -627,6 +1185,32 @@ class SuperBizAgentApp {
 
     // 发送消息
     async sendMessage() {
+        if (this.isStreaming && this.abortController) {
+            const stoppedMessageId = this.currentAssistantMessageId;
+            this.abortController.abort();
+            if (stoppedMessageId) {
+                this.apiFetch(`${this.apiBaseUrl}/chat/${stoppedMessageId}/stop`, {
+                    method: 'POST'
+                }).catch((error) => {
+                    console.warn('同步停止状态失败:', error);
+                });
+            }
+            if (this.currentStreamingElement) {
+                const messageContent = this.currentStreamingElement.querySelector('.message-content');
+                const existingText = messageContent ? messageContent.textContent.trim() : '';
+                if (messageContent && !existingText) {
+                    messageContent.textContent = '已停止生成';
+                }
+                this.currentStreamingElement.classList.remove('streaming');
+            }
+            this.isStreaming = false;
+            this.currentAssistantMessageId = null;
+            this.currentStreamingElement = null;
+            this.collapseProcessPanel();
+            this.updateUI();
+            this.showNotification('已停止生成', 'success');
+            return;
+        }
         let message = '';
         if (this.messageInput) {
             message = this.messageInput.value.trim();
@@ -655,11 +1239,7 @@ class SuperBizAgentApp {
         this.updateUI();
 
         try {
-            if (this.currentMode === 'quick') {
-                await this.sendQuickMessage(message);
-            } else if (this.currentMode === 'stream') {
-                await this.sendStreamMessage(message);
-            }
+            await this.sendStreamMessage(message);
         } catch (error) {
             console.error('发送消息失败:', error);
             this.addMessage('assistant', '抱歉，发送消息时出现错误：' + error.message);
@@ -677,15 +1257,14 @@ class SuperBizAgentApp {
 
     // 发送快速消息（普通对话）
     async sendQuickMessage(message) {
-        // 添加等待提示消息
-        const loadingMessage = this.addLoadingMessage('正在思考...');
+        const assistantMessageElement = this.addMessage('assistant', '', true, false);
+        this.currentStreamingElement = assistantMessageElement;
+        this.createProcessPanel(assistantMessageElement);
+        this.updateProcessStep('intent_detection', 'running', '正在识别问题类型');
         
         try {
-            const response = await fetch(`${this.apiBaseUrl}/chat`, {
+            const response = await this.apiFetch(`${this.apiBaseUrl}/chat`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
                 body: JSON.stringify({
                     Id: this.sessionId,
                     Question: message
@@ -699,11 +1278,6 @@ class SuperBizAgentApp {
             const data = await response.json();
             console.log('[sendQuickMessage] 响应数据:', JSON.stringify(data));
             
-            // 移除等待提示消息
-            if (loadingMessage && loadingMessage.parentNode) {
-                loadingMessage.parentNode.removeChild(loadingMessage);
-            }
-            
             // 统一响应格式：检查 data.code 或 data.message 判断请求是否成功
             if (data.code === 200 || data.message === 'success') {
                 // data.data 是 ChatResponse 对象
@@ -711,8 +1285,18 @@ class SuperBizAgentApp {
                 
                 if (chatResponse && chatResponse.success) {
                     // 成功：添加实际响应消息（即使 answer 为空也显示）
+                    this.sessionId = chatResponse.session_id || this.sessionId;
                     const answer = chatResponse.answer || '（无回复内容）';
-                    this.addMessage('assistant', answer);
+                    this.setAssistantMessageContent(assistantMessageElement, answer, {
+                        messageId: chatResponse.message_id,
+                        citations: chatResponse.citations || []
+                    });
+                    this.completeQuickProcess(chatResponse);
+                    this.currentChatHistory.push(this.buildHistoryMessage('assistant', answer, {
+                        messageId: chatResponse.message_id,
+                        citations: chatResponse.citations || [],
+                        processSteps: this.snapshotCurrentProcessSteps()
+                    }));
                 } else if (chatResponse && chatResponse.errorMessage) {
                     // 业务错误
                     throw new Error(chatResponse.errorMessage);
@@ -726,22 +1310,29 @@ class SuperBizAgentApp {
                 throw new Error(data.message || '请求失败');
             }
         } catch (error) {
-            // 出错时也要移除等待提示消息
-            if (loadingMessage && loadingMessage.parentNode) {
-                loadingMessage.parentNode.removeChild(loadingMessage);
-            }
+            this.updateProcessStep('answer_generation', 'failed', error.message || '生成失败');
+            this.setAssistantMessageContent(assistantMessageElement, '抱歉，发送消息时出现错误：' + error.message);
             throw error;
+        } finally {
+            this.currentStreamingElement = null;
+            this.resetCurrentProcessTracking();
         }
     }
 
     // 发送流式消息
     async sendStreamMessage(message) {
+        const assistantMessageElement = this.addMessage('assistant', '', true);
+        this.currentStreamingElement = assistantMessageElement;
+        this.createProcessPanel(assistantMessageElement);
+        this.updateProcessStep('intent_detection', 'running', '正在识别问题类型');
         try {
-            const response = await fetch(`${this.apiBaseUrl}/chat_stream`, {
+            this.abortController = new AbortController();
+            this.currentAssistantMessageId = null;
+            let streamingCitations = [];
+            let streamingMessageId = '';
+            const response = await this.apiFetch(`${this.apiBaseUrl}/chat_stream`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                signal: this.abortController.signal,
                 body: JSON.stringify({
                     Id: this.sessionId,
                     Question: message
@@ -752,8 +1343,6 @@ class SuperBizAgentApp {
                 throw new Error(`HTTP错误: ${response.status}`);
             }
             
-            // 创建助手消息元素
-            const assistantMessageElement = this.addMessage('assistant', '', true);
             let fullResponse = '';
 
             // 处理流式响应
@@ -814,8 +1403,20 @@ class SuperBizAgentApp {
                                 console.log('[SSE调试] 解析JSON成功:', sseMessage);
                                 
                                 if (sseMessage && typeof sseMessage.type === 'string') {
-                                    if (sseMessage.type === 'content') {
-                                        const content = sseMessage.data || '';
+                                    if (sseMessage.type === 'message_created') {
+                                        streamingMessageId = sseMessage.data?.assistant_message_id || '';
+                                        this.currentAssistantMessageId = streamingMessageId || null;
+                                    } else if (sseMessage.type === 'citation_created') {
+                                        streamingCitations = sseMessage.data?.citations || [];
+                                    } else if (sseMessage.type === 'node_status') {
+                                        const nodeData = sseMessage.data || {};
+                                        this.updateProcessStep(nodeData.node, nodeData.status, nodeData.message);
+                                        if (nodeData.node === 'answer_generation' && nodeData.status === 'success') {
+                                            const panel = this.currentProcessPanel;
+                                            setTimeout(() => this.collapseProcessPanel(panel), 300);
+                                        }
+                                    } else if (sseMessage.type === 'content') {
+                                        const content = this.extractSseText(sseMessage.data);
                                         fullResponse += content;
                                         console.log('[SSE调试] 添加内容:', content);
                                         
@@ -829,14 +1430,30 @@ class SuperBizAgentApp {
                                         }
                                     } else if (sseMessage.type === 'done') {
                                         console.log('[SSE调试] 收到done标记，流结束');
-                                        this.handleStreamComplete(assistantMessageElement, fullResponse);
+                                        const doneData = sseMessage.data || {};
+                                        streamingMessageId = doneData.message_id || streamingMessageId;
+                                        streamingCitations = doneData.citations || streamingCitations;
+                                        const finalAnswer = this.extractSseText(doneData);
+                                        if (!fullResponse && finalAnswer) {
+                                            fullResponse = finalAnswer;
+                                        }
+                                        this.handleStreamComplete(assistantMessageElement, fullResponse, {
+                                            messageId: streamingMessageId,
+                                            citations: streamingCitations
+                                        });
+                                        this.currentAssistantMessageId = null;
+                                        this.currentStreamingElement = null;
                                         return;
                                     } else if (sseMessage.type === 'error') {
                                         console.error('[SSE调试] 收到错误:', sseMessage.data);
                                         if (assistantMessageElement) {
                                             const messageContent = assistantMessageElement.querySelector('.message-content');
-                                            messageContent.innerHTML = this.renderMarkdown('错误: ' + (sseMessage.data || '未知错误'));
+                                            messageContent.innerHTML = this.renderMarkdown('错误: ' + (this.extractSseText(sseMessage.data) || '未知错误'));
                                         }
+                                        this.updateProcessStep('answer_generation', 'failed', this.extractSseText(sseMessage.data) || '生成失败');
+                                        this.currentAssistantMessageId = null;
+                                        this.currentStreamingElement = null;
+                                        this.resetCurrentProcessTracking();
                                         return;
                                     }
                                 } else {
@@ -873,26 +1490,41 @@ class SuperBizAgentApp {
                 reader.releaseLock();
             }
         } catch (error) {
+            if (error.name === 'AbortError') {
+                this.resetCurrentProcessTracking();
+                return;
+            }
             throw error;
+        } finally {
+            this.abortController = null;
         }
     }
 
+    extractSseText(data) {
+        if (data == null) return '';
+        if (typeof data === 'string') return data;
+        if (typeof data === 'number' || typeof data === 'boolean') return String(data);
+        if (typeof data === 'object') {
+            return data.text || data.answer || data.content || data.message || data.data || '';
+        }
+        return '';
+    }
+
     // 添加消息到聊天界面
-    addMessage(type, content, isStreaming = false, saveToHistory = true) {
+    addMessage(type, content, isStreaming = false, saveToHistory = true, options = {}) {
         // 检查是否是第一条消息，如果是则移除居中样式
         const isFirstMessage = this.chatMessages && this.chatMessages.querySelectorAll('.message').length === 0;
         
         // 保存消息到当前对话历史（如果不是流式消息且需要保存）
         if (!isStreaming && saveToHistory && content) {
-            this.currentChatHistory.push({
-                type: type,
-                content: content,
-                timestamp: new Date().toISOString()
-            });
+            this.currentChatHistory.push(this.buildHistoryMessage(type, content, options));
         }
         
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}${isStreaming ? ' streaming' : ''}`;
+        if (options.messageId || options.id) {
+            messageDiv.dataset.messageId = options.messageId || options.id;
+        }
 
         // 如果是assistant消息，添加头像图标
         if (type === 'assistant') {
@@ -915,9 +1547,7 @@ class SuperBizAgentApp {
         
         // 如果是assistant消息且不是流式消息，使用Markdown渲染
         if (type === 'assistant' && !isStreaming) {
-            messageContent.innerHTML = this.renderMarkdown(content);
-            // 高亮代码块
-            this.highlightCodeBlocks(messageContent);
+            messageContent.innerHTML = '';
         } else {
             // 用户消息或流式消息使用纯文本
             messageContent.textContent = content;
@@ -928,6 +1558,10 @@ class SuperBizAgentApp {
 
         if (this.chatMessages) {
             this.chatMessages.appendChild(messageDiv);
+            if (type === 'assistant' && !isStreaming) {
+                this.setAssistantMessageContent(messageDiv, content, options);
+                this.renderProcessPanelFromHistory(messageDiv, options.processSteps || options.process_steps || []);
+            }
             
             // 如果是第一条消息，移除居中样式并添加动画
             if (isFirstMessage && this.chatContainer) {
@@ -1019,29 +1653,25 @@ class SuperBizAgentApp {
     }
 
     // 处理流式传输完成
-    handleStreamComplete(assistantMessageElement, fullResponse) {
+    handleStreamComplete(assistantMessageElement, fullResponse, options = {}) {
+        const historyOptions = {
+            ...options,
+            processSteps: options.processSteps || options.process_steps || this.snapshotCurrentProcessSteps()
+        };
         if (assistantMessageElement) {
             assistantMessageElement.classList.remove('streaming');
-            const messageContent = assistantMessageElement.querySelector('.message-content');
-            if (messageContent) {
-                messageContent.innerHTML = this.renderMarkdown(fullResponse);
-                // 高亮代码块
-                this.highlightCodeBlocks(messageContent);
-            }
+            this.setAssistantMessageContent(assistantMessageElement, fullResponse, historyOptions);
         }
         // 保存流式消息到历史记录
         if (fullResponse) {
-            this.currentChatHistory.push({
-                type: 'assistant',
-                content: fullResponse,
-                timestamp: new Date().toISOString()
-            });
+            this.currentChatHistory.push(this.buildHistoryMessage('assistant', fullResponse, historyOptions));
             // 如果当前对话是从历史记录加载的，更新历史记录
             if (this.isCurrentChatFromHistory) {
                 this.updateCurrentChatHistory();
                 this.renderChatHistory();
             }
         }
+        this.resetCurrentProcessTracking();
     }
 
     // 显示通知
@@ -1086,86 +1716,6 @@ class SuperBizAgentApp {
         }, 3000);
     }
 
-    // 处理文件选择
-    handleFileSelect(event) {
-        const file = event.target.files[0];
-        if (file) {
-            // 验证文件格式
-            if (!this.validateFileType(file)) {
-                this.showNotification('只支持上传 TXT 或 Markdown (.md) 格式的文件', 'error');
-                this.fileInput.value = '';
-                return;
-            }
-            this.uploadFile(file);
-        }
-    }
-
-    // 验证文件类型
-    validateFileType(file) {
-        const fileName = file.name.toLowerCase();
-        const allowedExtensions = ['.txt', '.md', '.markdown'];
-        return allowedExtensions.some(ext => fileName.endsWith(ext));
-    }
-
-    // 上传文件到知识库
-    async uploadFile(file) {
-        // 再次验证文件类型（双重保险）
-        if (!this.validateFileType(file)) {
-            this.showNotification('只支持上传 TXT 或 Markdown (.md) 格式的文件', 'error');
-            return;
-        }
-
-        // 验证文件大小（限制为50MB）
-        const maxSize = 50 * 1024 * 1024;
-        if (file.size > maxSize) {
-            this.showNotification('文件大小不能超过50MB', 'error');
-            return;
-        }
-
-        // 锁定前端并显示上传遮罩层
-        this.isStreaming = true;
-        this.updateUI();
-        this.showUploadOverlay(true, file.name);
-
-        try {
-            // 创建 FormData
-            const formData = new FormData();
-            formData.append('file', file);
-
-            // 发送上传请求
-            const response = await fetch(`${this.apiBaseUrl}/upload`, {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP错误: ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            if ((data.code === 200 || data.message === 'success') && data.data) {
-                // 在聊天界面显示上传成功消息
-                const successMessage = `${file.name} 上传到知识库成功`;
-                this.addMessage('assistant', successMessage, false, true);
-            } else {
-                throw new Error(data.message || '上传失败');
-            }
-        } catch (error) {
-            console.error('文件上传失败:', error);
-            this.showNotification('文件上传失败: ' + error.message, 'error');
-        } finally {
-            // 清空文件输入
-            if (this.fileInput) {
-                this.fileInput.value = '';
-            }
-            // 解锁前端
-            this.isStreaming = false;
-            this.showUploadOverlay(false);
-            this.updateUI();
-        }
-    }
-
     // 格式化文件大小
     formatFileSize(bytes) {
         if (bytes === 0) return '0 Bytes';
@@ -1175,405 +1725,6 @@ class SuperBizAgentApp {
         return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
     }
 
-    // 发送智能运维请求（SSE 流式模式）
-    async sendAIOpsRequest(loadingMessageElement) {
-        try {
-            const response = await fetch(`${this.apiBaseUrl}/aiops`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    session_id: this.sessionId
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP错误: ${response.status}`);
-            }
-
-            let fullResponse = '';
-
-            // 处理 SSE 流式响应
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let currentEvent = 'message'; // 默认事件类型为 message
-
-            try {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    
-                    if (done) {
-                        // 流结束，更新最终内容
-                        if (fullResponse) {
-                            console.log('AI Ops 流结束，更新最终内容，长度:', fullResponse.length);
-                            this.updateAIOpsMessage(loadingMessageElement, fullResponse, []);
-                        }
-                        break;
-                    }
-
-                    // 解码数据并添加到缓冲区
-                    buffer += decoder.decode(value, { stream: true });
-                    
-                    // 按行分割处理
-                    const lines = buffer.split('\n');
-                    // 保留最后一行（可能不完整）
-                    buffer = lines.pop() || '';
-                    
-                    for (const line of lines) {
-                        if (line.trim() === '') continue;
-                        
-                        console.log('[AI Ops SSE] 收到行:', line);
-                        
-                        // 解析 SSE 格式
-                        if (line.startsWith('id:')) {
-                            continue;
-                        } else if (line.startsWith('event:')) {
-                            currentEvent = line.substring(6).trim();
-                            console.log('[AI Ops SSE] 事件类型:', currentEvent);
-                            continue;
-                        } else if (line.startsWith('data:')) {
-                            const rawData = line.substring(5).trim();
-                            console.log('[AI Ops SSE] 数据:', rawData, ', currentEvent:', currentEvent);
-                            
-                            // 解析可能包含多个JSON对象的数据
-                            const processJsonMessages = (data) => {
-                                const jsonPattern = /\{"type"\s*:\s*"[^"]+"\s*,\s*"data"\s*:\s*(?:"[^"]*"|null)\}/g;
-                                const matches = data.match(jsonPattern);
-                                
-                                if (matches && matches.length > 0) {
-                                    console.log('[AI Ops SSE] 匹配到', matches.length, '个JSON对象');
-                                    for (const jsonStr of matches) {
-                                        try {
-                                            const sseMessage = JSON.parse(jsonStr);
-                                            if (sseMessage.type === 'content') {
-                                                fullResponse += sseMessage.data || '';
-                                            } else if (sseMessage.type === 'plan') {
-                                                // 处理计划创建事件
-                                                const planText = `\n\n## 📋 执行计划\n${sseMessage.message}\n\n`;
-                                                fullResponse += planText;
-                                            } else if (sseMessage.type === 'step_complete') {
-                                                // 处理步骤完成事件
-                                                const stepText = `\n✅ ${sseMessage.message}\n`;
-                                                fullResponse += stepText;
-                                            } else if (sseMessage.type === 'status') {
-                                                // 处理状态更新事件
-                                                const statusText = `\n⏳ ${sseMessage.message}\n`;
-                                                fullResponse += statusText;
-                                            } else if (sseMessage.type === 'report') {
-                                                // 处理最终报告事件 - 流式输出
-                                                console.log('AI Ops 最终报告生成');
-                                                const reportText = `\n\n## 🎯 诊断报告\n\n${sseMessage.report || ''}\n`;
-                                                fullResponse += reportText;
-                                            } else if (sseMessage.type === 'complete') {
-                                                // 处理完成事件
-                                                console.log('AI Ops 诊断完成');
-                                                if (sseMessage.response) {
-                                                    fullResponse += `\n\n${sseMessage.response}`;
-                                                }
-                                                this.updateAIOpsMessage(loadingMessageElement, fullResponse, []);
-                                                return true;
-                                            } else if (sseMessage.type === 'done') {
-                                                console.log('AI Ops 流完成，最终内容长度:', fullResponse.length);
-                                                this.updateAIOpsMessage(loadingMessageElement, fullResponse, []);
-                                                return true;
-                                            } else if (sseMessage.type === 'error') {
-                                                throw new Error(sseMessage.data || sseMessage.message || '智能运维分析失败');
-                                            }
-                                        } catch (e) {
-                                            if (e.message.includes('智能运维')) throw e;
-                                            console.log('[AI Ops SSE] 单个JSON解析失败:', jsonStr);
-                                        }
-                                    }
-                                    if (loadingMessageElement) {
-                                        this.updateAIOpsStreamContent(loadingMessageElement, fullResponse);
-                                    }
-                                    return false;
-                                }
-                                return null;
-                            };
-                            
-                            const result = processJsonMessages(rawData);
-                            if (result === true) {
-                                return; // 流结束
-                            } else if (result === null) {
-                                // 没有匹配到多个JSON，尝试单个JSON解析
-                                try {
-                                    const sseMessage = JSON.parse(rawData);
-                                    if (sseMessage && sseMessage.type) {
-                                        if (sseMessage.type === 'content') {
-                                            fullResponse += sseMessage.data || '';
-                                            if (loadingMessageElement) {
-                                                this.updateAIOpsStreamContent(loadingMessageElement, fullResponse);
-                                            }
-                                        } else if (sseMessage.type === 'plan') {
-                                            // 处理计划创建事件
-                                            const planText = `\n\n## 📋 执行计划\n${sseMessage.message}\n\n`;
-                                            fullResponse += planText;
-                                            if (loadingMessageElement) {
-                                                this.updateAIOpsStreamContent(loadingMessageElement, fullResponse);
-                                            }
-                                        } else if (sseMessage.type === 'step_complete') {
-                                            // 处理步骤完成事件
-                                            const stepText = `\n✅ ${sseMessage.message}\n`;
-                                            fullResponse += stepText;
-                                            if (loadingMessageElement) {
-                                                this.updateAIOpsStreamContent(loadingMessageElement, fullResponse);
-                                            }
-                                        } else if (sseMessage.type === 'status') {
-                                            // 处理状态更新事件
-                                            const statusText = `\n⏳ ${sseMessage.message}\n`;
-                                            fullResponse += statusText;
-                                            if (loadingMessageElement) {
-                                                this.updateAIOpsStreamContent(loadingMessageElement, fullResponse);
-                                            }
-                                        } else if (sseMessage.type === 'report') {
-                                            // 处理最终报告事件 - 这是关键！
-                                            console.log('AI Ops 最终报告生成，流式输出中...');
-                                            const reportText = `\n\n## 🎯 诊断报告\n\n${sseMessage.report || ''}\n`;
-                                            fullResponse += reportText;
-                                            if (loadingMessageElement) {
-                                                this.updateAIOpsStreamContent(loadingMessageElement, fullResponse);
-                                            }
-                                        } else if (sseMessage.type === 'complete') {
-                                            // 处理完成事件
-                                            console.log('AI Ops 诊断完成，最终内容长度:', fullResponse.length);
-                                            if (sseMessage.response) {
-                                                fullResponse += `\n\n${sseMessage.response}`;
-                                            }
-                                            // 使用最终的完整内容更新消息
-                                            this.updateAIOpsMessage(loadingMessageElement, fullResponse, []);
-                                            return;
-                                        } else if (sseMessage.type === 'done') {
-                                            console.log('AI Ops 流完成，最终内容长度:', fullResponse.length);
-                                            this.updateAIOpsMessage(loadingMessageElement, fullResponse, []);
-                                            return;
-                                        } else if (sseMessage.type === 'error') {
-                                            throw new Error(sseMessage.data || sseMessage.message || '智能运维分析失败');
-                                        }
-                                    } else {
-                                        fullResponse += rawData;
-                                        if (loadingMessageElement) {
-                                            this.updateAIOpsStreamContent(loadingMessageElement, fullResponse);
-                                        }
-                                    }
-                                } catch (e) {
-                                    if (e.message.includes('智能运维')) throw e;
-                                    // 非 JSON 格式，直接追加原始数据
-                                    fullResponse += rawData;
-                                    if (loadingMessageElement) {
-                                        this.updateAIOpsStreamContent(loadingMessageElement, fullResponse);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } finally {
-                reader.releaseLock();
-            }
-        } catch (error) {
-            throw error;
-        }
-    }
-
-    // 更新智能运维流式内容（实时显示）
-    updateAIOpsStreamContent(messageElement, content) {
-        if (!messageElement) return;
-        
-        // 添加 aiops-message 类
-        messageElement.classList.add('aiops-message');
-        
-        const messageContentWrapper = messageElement.querySelector('.message-content-wrapper');
-        if (messageContentWrapper) {
-            let messageContent = messageContentWrapper.querySelector('.message-content');
-            if (!messageContent) {
-                messageContent = document.createElement('div');
-                messageContent.className = 'message-content';
-                messageContentWrapper.appendChild(messageContent);
-            }
-            // 流式显示时使用纯文本
-            messageContent.textContent = content;
-            this.scrollToBottom();
-        }
-    }
-
-    // 更新智能运维消息（带折叠详情）
-    updateAIOpsMessage(messageElement, response, details) {
-        console.log('updateAIOpsMessage 被调用');
-        console.log('messageElement:', messageElement);
-        console.log('response:', response);
-        console.log('response length:', response ? response.length : 0);
-        console.log('details:', details);
-        
-        if (!messageElement) {
-            // 如果没有传入消息元素，则创建新消息
-            console.log('messageElement 为空，创建新消息');
-            return this.addAIOpsMessage(response, details);
-        }
-
-        // 添加aiops-message类
-        messageElement.classList.add('aiops-message');
-
-        // 获取消息内容包装器
-        const messageContentWrapper = messageElement.querySelector('.message-content-wrapper');
-        if (!messageContentWrapper) {
-            console.error('未找到 message-content-wrapper');
-            return;
-        }
-
-        // 清空现有内容（保留消息内容容器）
-        const messageContent = messageContentWrapper.querySelector('.message-content');
-        if (!messageContent) {
-            console.error('未找到 message-content');
-            return;
-        }
-
-        // 移除加载动画相关的类和内容
-        messageContent.classList.remove('loading-message-content');
-        messageContent.textContent = '';
-        
-        // 移除加载图标（如果存在）
-        const loadingIcon = messageContent.querySelector('.loading-spinner-icon');
-        if (loadingIcon) {
-            loadingIcon.remove();
-        }
-
-        // 详情部分（可折叠）- 先显示
-        if (details && details.length > 0) {
-            // 检查是否已存在详情容器
-            let detailsContainer = messageElement.querySelector('.aiops-details');
-            if (!detailsContainer) {
-                detailsContainer = document.createElement('div');
-                detailsContainer.className = 'aiops-details';
-                messageContentWrapper.insertBefore(detailsContainer, messageContent);
-            } else {
-                // 清空现有详情
-                detailsContainer.innerHTML = '';
-            }
-
-            const detailsToggle = document.createElement('div');
-            detailsToggle.className = 'details-toggle';
-            detailsToggle.innerHTML = `
-                <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span>查看详细步骤 (${details.length}条)</span>
-            `;
-
-            const detailsContent = document.createElement('div');
-            detailsContent.className = 'details-content';
-            
-            details.forEach((detail, index) => {
-                const detailItem = document.createElement('div');
-                detailItem.className = 'detail-item';
-                detailItem.innerHTML = `<strong>步骤 ${index + 1}:</strong> ${this.escapeHtml(detail)}`;
-                detailsContent.appendChild(detailItem);
-            });
-
-            // 点击切换折叠状态
-            detailsToggle.addEventListener('click', () => {
-                detailsContent.classList.toggle('expanded');
-                detailsToggle.classList.toggle('expanded');
-            });
-
-            detailsContainer.appendChild(detailsToggle);
-            detailsContainer.appendChild(detailsContent);
-        }
-
-        // 更新主要响应内容（使用Markdown渲染）
-        console.log('开始渲染 Markdown');
-        const renderedHtml = this.renderMarkdown(response);
-        console.log('Markdown 渲染完成，HTML 长度:', renderedHtml ? renderedHtml.length : 0);
-        messageContent.innerHTML = renderedHtml;
-        console.log('innerHTML 已设置');
-        // 高亮代码块
-        this.highlightCodeBlocks(messageContent);
-        console.log('代码块高亮完成');
-        
-        // 保存到历史记录
-        this.currentChatHistory.push({
-            type: 'assistant',
-            content: response,
-            timestamp: new Date().toISOString()
-        });
-        
-        this.scrollToBottom();
-        return messageElement;
-    }
-
-    // 添加智能运维消息（带折叠详情）- 保留用于兼容性
-    addAIOpsMessage(response, details) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message assistant aiops-message';
-
-        // 添加头像图标
-        const messageAvatar = document.createElement('div');
-        messageAvatar.className = 'message-avatar';
-        messageAvatar.innerHTML = `
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="white"/>
-            </svg>
-        `;
-        messageDiv.appendChild(messageAvatar);
-
-        // 创建消息内容包装器
-        const messageContentWrapper = document.createElement('div');
-        messageContentWrapper.className = 'message-content-wrapper';
-
-        // 详情部分（可折叠）- 先显示
-        if (details && details.length > 0) {
-            const detailsContainer = document.createElement('div');
-            detailsContainer.className = 'aiops-details';
-
-            const detailsToggle = document.createElement('div');
-            detailsToggle.className = 'details-toggle';
-            detailsToggle.innerHTML = `
-                <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span>查看详细步骤 (${details.length}条)</span>
-            `;
-
-            const detailsContent = document.createElement('div');
-            detailsContent.className = 'details-content';
-            
-            details.forEach((detail, index) => {
-                const detailItem = document.createElement('div');
-                detailItem.className = 'detail-item';
-                detailItem.innerHTML = `<strong>步骤 ${index + 1}:</strong> ${this.escapeHtml(detail)}`;
-                detailsContent.appendChild(detailItem);
-            });
-
-            // 点击切换折叠状态
-            detailsToggle.addEventListener('click', () => {
-                detailsContent.classList.toggle('expanded');
-                detailsToggle.classList.toggle('expanded');
-            });
-
-            detailsContainer.appendChild(detailsToggle);
-            detailsContainer.appendChild(detailsContent);
-            messageContentWrapper.appendChild(detailsContainer);
-        }
-
-        // 主要响应内容 - 后显示（使用Markdown渲染）
-        const messageContent = document.createElement('div');
-        messageContent.className = 'message-content';
-        messageContent.innerHTML = this.renderMarkdown(response);
-        // 高亮代码块
-        this.highlightCodeBlocks(messageContent);
-        messageContentWrapper.appendChild(messageContent);
-        messageDiv.appendChild(messageContentWrapper);
-        
-        if (this.chatMessages) {
-            this.chatMessages.appendChild(messageDiv);
-            this.scrollToBottom();
-        }
-
-        return messageDiv;
-    }
-
     // HTML转义
     escapeHtml(text) {
         const div = document.createElement('div');
@@ -1581,51 +1732,15 @@ class SuperBizAgentApp {
         return div.innerHTML;
     }
 
-    // 触发智能运维（点击智能运维按钮时直接调用）
-    async triggerAIOps() {
-        if (this.isStreaming) {
-            this.showNotification('请等待当前操作完成', 'warning');
-            return;
-        }
-
-        // 新建对话
-        this.newChat();
-        
-        // 添加"分析中..."的消息（带旋转动画）
-        const loadingMessage = this.addLoadingMessage('分析中...');
-        this.currentAIOpsMessage = loadingMessage; // 保存消息引用用于后续更新
-        
-        // 设置发送状态
-        this.isStreaming = true;
-        this.updateUI();
-
-        try {
-            await this.sendAIOpsRequest(loadingMessage);
-        } catch (error) {
-            console.error('智能运维分析失败:', error);
-            // 更新消息为错误信息
-            if (loadingMessage) {
-                const messageContent = loadingMessage.querySelector('.message-content');
-                if (messageContent) {
-                    messageContent.textContent = '抱歉，智能运维分析时出现错误：' + error.message;
-                }
-            }
-        } finally {
-            this.isStreaming = false;
-            this.currentAIOpsMessage = null;
-            this.updateUI();
-        }
-    }
-
     // 显示/隐藏加载遮罩层
     showLoadingOverlay(show) {
         if (this.loadingOverlay) {
             if (show) {
                 this.loadingOverlay.style.display = 'flex';
-                // 更新文字为智能运维
+                // 更新文字为通用处理中
                 const loadingText = this.loadingOverlay.querySelector('.loading-text');
                 const loadingSubtext = this.loadingOverlay.querySelector('.loading-subtext');
-                if (loadingText) loadingText.textContent = '智能运维分析中，请稍候...';
+                if (loadingText) loadingText.textContent = '处理中，请稍候...';
                 if (loadingSubtext) loadingSubtext.textContent = '后端正在处理，请耐心等待';
                 // 防止页面滚动
                 document.body.style.overflow = 'hidden';
@@ -1637,25 +1752,6 @@ class SuperBizAgentApp {
         }
     }
 
-    // 显示/隐藏上传遮罩层
-    showUploadOverlay(show, fileName = '') {
-        if (this.loadingOverlay) {
-            if (show) {
-                this.loadingOverlay.style.display = 'flex';
-                // 更新文字为上传中
-                const loadingText = this.loadingOverlay.querySelector('.loading-text');
-                const loadingSubtext = this.loadingOverlay.querySelector('.loading-subtext');
-                if (loadingText) loadingText.textContent = '正在上传文件...';
-                if (loadingSubtext) loadingSubtext.textContent = fileName ? `上传: ${fileName}` : '请稍候';
-                // 防止页面滚动
-                document.body.style.overflow = 'hidden';
-            } else {
-                this.loadingOverlay.style.display = 'none';
-                // 恢复页面滚动
-                document.body.style.overflow = '';
-            }
-        }
-    }
 }
 
 // 添加CSS动画

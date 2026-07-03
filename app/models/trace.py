@@ -1,4 +1,4 @@
-"""AIOps run trace 数据模型。"""
+"""Agent run trace 数据模型。"""
 
 from datetime import datetime
 from typing import Any, Literal
@@ -45,7 +45,7 @@ class ToolCallRecord(BaseModel):
 
 
 class TraceRecord(BaseModel):
-    """一次 AIOps 诊断的完整 trace。"""
+    """一次 Agent 执行的完整 trace。"""
 
     trace_id: str
     session_id: str

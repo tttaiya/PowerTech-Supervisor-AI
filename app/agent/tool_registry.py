@@ -28,7 +28,7 @@ class ToolMeta(BaseModel):
     retry_count: int = 0
     risk_level: RiskLevel = "read_only"
     enabled: bool = True
-    owner: str = "aiops"
+    owner: str = "system"
     input_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
 

@@ -2,11 +2,15 @@
 
 from datetime import datetime
 from pathlib import Path
+import json
 from typing import Any, Dict, Optional
 
 from loguru import logger
 
+from app.core.milvus_client import milvus_manager
+from app.models.orm.knowledge import KnowledgeChunk
 from app.services.document_splitter_service import document_splitter_service
+from app.services.vector_embedding_service import vector_embedding_service
 from app.services.vector_store_manager import vector_store_manager
 
 
@@ -63,6 +67,58 @@ class VectorIndexService:
         """初始化向量索引服务"""
         self.upload_path = "./uploads"
         logger.info("向量索引服务初始化完成")
+
+    def index_chunks(self, chunks: list[KnowledgeChunk], document_name: str = "") -> dict[str, str]:
+        """
+        将知识库 chunk 向量化并写入 Milvus。
+
+        Returns:
+            dict[str, str]: chunk_id -> vector_id 映射
+        """
+        if not chunks:
+            return {}
+
+        milvus_manager.connect()
+        texts = [chunk.content for chunk in chunks]
+        vectors = vector_embedding_service.embed_documents(texts)
+        payload = []
+        result: dict[str, str] = {}
+
+        for chunk, vector in zip(chunks, vectors, strict=False):
+            vector_id = chunk.id
+            payload.append(
+                {
+                    "id": vector_id,
+                    "chunk_id": chunk.id,
+                    "document_id": chunk.document_id,
+                    "knowledge_base_id": chunk.knowledge_base_id,
+                    "content": chunk.content,
+                    "section_path": chunk.section_path or "全文",
+                    "file_name": document_name or "",
+                    "metadata": {
+                        "chunk_id": chunk.id,
+                        "document_id": chunk.document_id,
+                        "knowledge_base_id": chunk.knowledge_base_id,
+                        "section_path": chunk.section_path or "全文",
+                        "file_name": document_name or "",
+                    },
+                    "vector": vector,
+                }
+            )
+            result[chunk.id] = vector_id
+
+        milvus_manager.insert_rows(payload)
+        logger.info(f"知识库向量写入完成: {len(payload)} 个 chunk, document={document_name or 'unknown'}")
+        return result
+
+    def delete_by_document_id(self, document_id: str) -> int:
+        return self._delete_by_field_values("document_id", [document_id])
+
+    def delete_by_knowledge_base_id(self, knowledge_base_id: str) -> int:
+        return self._delete_by_field_values("knowledge_base_id", [knowledge_base_id])
+
+    def delete_by_chunk_ids(self, chunk_ids: list[str]) -> int:
+        return self._delete_by_field_values("chunk_id", chunk_ids)
 
     def index_directory(self, directory_path: Optional[str] = None) -> IndexingResult:
         """
@@ -169,6 +225,22 @@ class VectorIndexService:
         except Exception as e:
             logger.error(f"索引文件失败: {file_path}, 错误: {e}")
             raise RuntimeError(f"索引文件失败: {e}") from e
+
+    def _delete_by_field_values(self, field_name: str, values: list[str]) -> int:
+        if not values:
+            return 0
+        try:
+            milvus_manager.connect()
+            quoted = ", ".join(json.dumps(value, ensure_ascii=False) for value in values if value)
+            if not quoted:
+                return 0
+            expr = f"{field_name} in [{quoted}]"
+            deleted_count = milvus_manager.delete(filter_expr=expr)
+            logger.info(f"Milvus 删除完成: field={field_name}, count={deleted_count}")
+            return deleted_count
+        except Exception as e:
+            logger.warning(f"Milvus 删除失败: field={field_name}, error={e}")
+            return 0
 
 
 # 全局单例

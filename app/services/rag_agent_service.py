@@ -95,11 +95,12 @@ class RagAgentService:
         self.model = ChatQwen(
             model=self.model_name,
             api_key=config.dashscope_api_key,
+            base_url=config.dashscope_api_base,
             temperature=0.7,
             streaming=streaming,
         )
 
-        # 定义基础工具（与 AIOps Planner/Executor 使用同一套默认本地工具）
+        # 定义普通问答可用的本地工具
         self.tools = list(DEFAULT_LOCAL_AGENT_TOOLS)
 
         # MCP 客户端（延迟初始化，使用全局管理）

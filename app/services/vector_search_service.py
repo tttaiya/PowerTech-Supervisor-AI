@@ -1,9 +1,9 @@
 """向量检索服务模块"""
 
+import json
 from typing import Any, Dict, List
 
 from loguru import logger
-from pymilvus import Collection
 
 from app.core.milvus_client import milvus_manager
 from app.services.vector_embedding_service import vector_embedding_service
@@ -41,7 +41,12 @@ class VectorSearchService:
         """初始化向量检索服务"""
         logger.info("向量检索服务初始化完成")
 
-    def search_similar_documents(self, query: str, top_k: int = 3) -> List[SearchResult]:
+    def search_similar_documents(
+        self,
+        query: str,
+        top_k: int = 3,
+        knowledge_base_ids: list[str] | None = None,
+    ) -> List[SearchResult]:
         """
         搜索相似文档
 
@@ -62,8 +67,8 @@ class VectorSearchService:
             query_vector = vector_embedding_service.embed_query(query)
             logger.debug(f"查询向量生成成功, 维度: {len(query_vector)}")
 
-            # 2. 获取 collection
-            collection: Collection = milvus_manager.get_collection()
+            # 2. 获取 MilvusClient 并执行搜索
+            milvus_manager.connect()
 
             # 3. 构建搜索参数
             search_params = {
@@ -72,23 +77,50 @@ class VectorSearchService:
             }
 
             # 4. 执行搜索
-            results = collection.search(
+            expr = None
+            if knowledge_base_ids:
+                quoted = ", ".join(json.dumps(item, ensure_ascii=False) for item in knowledge_base_ids if item)
+                expr = f"knowledge_base_id in [{quoted}]" if quoted else None
+
+            results = milvus_manager.search(
                 data=[query_vector],
-                anns_field="vector",
-                param=search_params,
                 limit=top_k,
-                output_fields=["id", "content", "metadata"],
+                filter_expr=expr,
+                search_params=search_params,
+                anns_field="vector",
+                output_fields=[
+                    "id",
+                    "chunk_id",
+                    "document_id",
+                    "knowledge_base_id",
+                    "content",
+                    "section_path",
+                    "file_name",
+                    "metadata",
+                ],
             )
 
             # 5. 解析搜索结果
             search_results = []
             for hits in results:
                 for hit in hits:
+                    entity = hit.get("entity", {}) or {}
                     result = SearchResult(
-                        id=hit.entity.get("id"),
-                        content=hit.entity.get("content"),
-                        score=hit.distance,  # L2 距离，越小越相似
-                        metadata=hit.entity.get("metadata", {}),
+                        id=entity.get("id") or hit.get("id"),
+                        content=entity.get("content", ""),
+                        score=float(hit.get("distance", 0.0)),
+                        metadata={
+                            **(entity.get("metadata", {}) or {}),
+                            "id": entity.get("id") or hit.get("id"),
+                            "chunk_id": entity.get("chunk_id") or entity.get("id") or hit.get("id"),
+                            "document_id": entity.get("document_id"),
+                            "knowledge_base_id": entity.get("knowledge_base_id"),
+                            "file_name": entity.get("file_name"),
+                            "section_path": entity.get("section_path"),
+                            "raw_score": float(hit.get("distance", 0.0)),
+                            "normalized_score": 1.0 / (1.0 + max(float(hit.get("distance", 0.0)), 0.0)),
+                            "retrieval_source": "milvus",
+                        },
                     )
                     search_results.append(result)
 

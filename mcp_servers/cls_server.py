@@ -307,6 +307,24 @@ def search_topic_by_service_name(
             "create_time": "2024-01-01 10:00:00",
             "log_count": 0,
             "description": "API网关服务日志"
+        },
+        {
+            "topic_id": "topic-order-001",
+            "topic_name": "订单服务应用日志",
+            "service_name": "order-service",
+            "region_code": "ap-guangzhou",
+            "create_time": "2026-06-10 10:00:00",
+            "log_count": 1280,
+            "description": "order-service 应用日志，包含订单创建、库存校验和支付前置处理日志"
+        },
+        {
+            "topic_id": "topic-payment-001",
+            "topic_name": "支付服务应用日志",
+            "service_name": "payment-service",
+            "region_code": "ap-guangzhou",
+            "create_time": "2026-06-10 10:00:00",
+            "log_count": 980,
+            "description": "payment-service 应用日志，包含支付请求、三方支付网关调用和响应耗时日志"
         }
     ]
     
@@ -409,11 +427,31 @@ def search_log(
         )
     """
     # 根据 topic_id 返回不同的结果
-    if topic_id == "topic-001":
+    if topic_id in {"topic-001", "topic-order-001", "topic-payment-001"}:
         # topic-001: 应用日志，动态生成 INFO 日志
         logs = []
         current_time_ms = start_time
         count = 0
+        demo_logs_by_topic = {
+            "topic-001": [
+                ("INFO", "正在同步元数据……"),
+            ],
+            "topic-order-001": [
+                ("WARN", "order-service cpu_usage=93% worker_pool_busy=true active_threads=196 queue_depth=842"),
+                ("ERROR", "order-service createOrder slow path detected, inventory lock wait timeout after 2300ms"),
+                ("WARN", "order-service retry storm detected for endpoint=/orders/create retry_count=5"),
+                ("ERROR", "order-service database query timeout sql=select_inventory_by_sku duration_ms=3180"),
+                ("INFO", "order-service autoscale recommendation: increase replicas from 2 to 4"),
+            ],
+            "topic-payment-001": [
+                ("WARN", "payment-service p95_latency_ms=3680 upstream=third-party-pay-gateway"),
+                ("ERROR", "payment-service payment authorization timeout trace_id=pay-demo-1001 duration_ms=5020"),
+                ("WARN", "payment-service connection pool near saturation active=48 idle=1 max=50"),
+                ("ERROR", "payment-service downstream gateway returned 504 path=/pay/authorize"),
+                ("INFO", "payment-service fallback queue enabled for delayed payment confirmation"),
+            ],
+        }
+        demo_logs = demo_logs_by_topic[topic_id]
 
         # 计算最大可生成的日志条数（基于时间范围）
         max_logs_by_time = int((end_time - start_time) / (60 * 1000)) + 1
@@ -425,11 +463,12 @@ def search_log(
             # 将毫秒时间戳转换为可读格式
             log_time = datetime.fromtimestamp(current_time_ms / 1000)
             time_str = log_time.strftime("%Y-%m-%d %H:%M:%S")
+            level, message = demo_logs[count % len(demo_logs)]
 
             log_entry = {
                 "timestamp": time_str,
-                "level": "INFO",
-                "message": "正在同步元数据……"
+                "level": level,
+                "message": message
             }
 
             logs.append(log_entry)

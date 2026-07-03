@@ -1,6 +1,6 @@
 # MCP Servers
 
-为 AIOps 智能诊断提供日志查询和监控数据工具。
+为智能问答和运维知识检索提供日志查询和监控数据工具。
 
 ## 📚 服务列表
 
@@ -48,7 +48,7 @@ python mcp_servers/monitor_server.py
 
 ## 💡 使用示例
 
-### AIOps 诊断场景
+### 工具调用场景
 
 ```
 用户: data-sync-service 出现告警，请排查

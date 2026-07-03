@@ -28,9 +28,9 @@ class DocumentSplitterService:
             strip_headers=False,  # 保留标题在内容中
         )
 
-        # 递归字符分割器 (用于二次分割，使用更大的chunk_size)
+        # 递归字符分割器 (用于正式 RAG 切块)
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.chunk_size * 2,  # 加倍chunk_size，减少分片数
+            chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap,
             length_function=len,
             is_separator_regex=False,
@@ -38,7 +38,6 @@ class DocumentSplitterService:
 
         logger.info(
             f"文档分割服务初始化完成, chunk_size={self.chunk_size}, "
-            f"secondary_chunk_size={self.chunk_size * 2}, "
             f"overlap={self.chunk_overlap}"
         )
 
@@ -64,8 +63,8 @@ class DocumentSplitterService:
             # 第二阶段: 按大小进一步分割
             docs_after_split = self.text_splitter.split_documents(md_docs)
 
-            # 第三阶段: 合并太小的分片 (< 300字符)
-            final_docs = self._merge_small_chunks(docs_after_split, min_size=300)
+            # 第三阶段: 仅在同一 section 内合并极小分片，避免章节串味
+            final_docs = self._merge_small_chunks(docs_after_split, min_size=180)
 
             # 添加文件路径元数据
             for doc in final_docs:
@@ -131,6 +130,27 @@ class DocumentSplitterService:
         else:
             return self.split_text(content, file_path)
 
+    def split_for_knowledge_base(self, content: str, file_path: str = "") -> list[dict[str, str]]:
+        """
+        为知识库生成带 section_path 的稳定切片。
+
+        Returns:
+            list[dict[str, str]]: 每个元素包含 section_path 和 content
+        """
+        docs = self.split_document(content, file_path)
+        chunks: list[dict[str, str]] = []
+        for doc in docs:
+            text = (doc.page_content or "").strip()
+            if not text:
+                continue
+            chunks.append(
+                {
+                    "section_path": self._extract_section_path(doc),
+                    "content": text,
+                }
+            )
+        return chunks
+
     def _merge_small_chunks(
         self, documents: List[Document], min_size: int = 300
     ) -> List[Document]:
@@ -156,7 +176,11 @@ class DocumentSplitterService:
             if current_doc is None:
                 # 第一个文档
                 current_doc = doc
-            elif doc_size < min_size and len(current_doc.page_content) < self.chunk_size * 2:
+            elif (
+                doc_size < min_size
+                and len(current_doc.page_content) < self.chunk_size
+                and self._extract_section_path(current_doc) == self._extract_section_path(doc)
+            ):
                 # 当前文档太小且合并后不会太大，则合并
                 current_doc.page_content += "\n\n" + doc.page_content
                 # 保留主文档的元数据
@@ -170,6 +194,12 @@ class DocumentSplitterService:
             merged_docs.append(current_doc)
 
         return merged_docs
+
+    def _extract_section_path(self, doc: Document) -> str:
+        metadata = doc.metadata or {}
+        parts = [metadata.get("h1"), metadata.get("h2")]
+        parts = [part.strip() for part in parts if isinstance(part, str) and part.strip()]
+        return " / ".join(parts) if parts else "全文"
 
 
 # 全局单例
