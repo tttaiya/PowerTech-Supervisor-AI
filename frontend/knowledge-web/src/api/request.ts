@@ -37,7 +37,7 @@ request.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 request.interceptors.response.use(
   (resp: AxiosResponse) => resp.data,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && !import.meta.env.DEV) {
       // Token 失效或缺失，跳回登录
       if (typeof window !== 'undefined') {
         window.location.href = '/'

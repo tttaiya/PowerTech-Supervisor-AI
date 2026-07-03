@@ -278,9 +278,9 @@ async function testConnection(type: 'embedding' | 'rerank') {
   testing.value = type
   try {
     const result = await testConfigConnection({
-      type,
       apiBase: target.apiBase,
       apiKey: target.apiKey,
+      model: target.model,
     })
     result.success ? ElMessage.success(result.message) : ElMessage.error(result.message)
   } catch (error: any) {

@@ -93,6 +93,11 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
+  if (import.meta.env.DEV) {
+    next()
+    return
+  }
+
   if (typeof window !== 'undefined') {
     const token = window.localStorage.getItem('access_token')
     if (!token) {

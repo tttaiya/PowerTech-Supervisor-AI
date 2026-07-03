@@ -1,0 +1,182 @@
+:root {
+  --km-ink: #17171c;
+  --km-text: #212121;
+  --km-muted: #75758a;
+  --km-canvas: #ffffff;
+  --km-surface: #eeece7;
+  --km-surface-soft: #f6f6f3;
+  --km-green: #003c33;
+  --km-green-soft: #edfce9;
+  --km-border: #d9d9dd;
+  --km-border-light: #e5e7eb;
+  --km-coral: #ff7759;
+  --km-focus: #4c6ee6;
+  --km-shadow-soft: 0 8px 30px rgba(0, 0, 0, 0.04);
+  --km-radius-sm: 10px;
+  --km-radius-md: 14px;
+  --km-radius-lg: 20px;
+  --km-font:
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Display",
+    "SF Pro Text",
+    "Segoe UI",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    Arial,
+    sans-serif;
+
+  --el-color-primary: var(--km-green);
+  --el-color-primary-light-3: #2c6258;
+  --el-color-primary-light-5: #6d938b;
+  --el-color-primary-light-7: #b3cbc4;
+  --el-color-primary-light-8: #d1e4de;
+  --el-color-primary-light-9: var(--km-green-soft);
+  --el-color-primary-dark-2: #001f1a;
+  --el-color-danger: #b53b2d;
+  --el-color-warning: var(--km-coral);
+  --el-color-info: var(--km-muted);
+  --el-text-color-primary: var(--km-text);
+  --el-text-color-regular: var(--km-text);
+  --el-text-color-secondary: var(--km-muted);
+  --el-border-color: var(--km-border);
+  --el-border-color-light: var(--km-border-light);
+  --el-fill-color-blank: var(--km-canvas);
+  --el-border-radius-base: 12px;
+  --el-font-family: var(--km-font);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  color: var(--km-text);
+  background: var(--km-surface-soft);
+  font-family: var(--km-font);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a {
+  color: var(--km-focus);
+}
+
+.el-button {
+  border-radius: 999px;
+  font-weight: 560;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.el-button:not(.is-disabled):hover {
+  transform: translateY(-1px);
+}
+
+.el-button--primary {
+  --el-button-bg-color: var(--km-ink);
+  --el-button-border-color: var(--km-ink);
+  --el-button-hover-bg-color: var(--km-green);
+  --el-button-hover-border-color: var(--km-green);
+  --el-button-active-bg-color: #001f1a;
+  --el-button-active-border-color: #001f1a;
+  box-shadow: 0 8px 24px rgba(0, 60, 51, 0.12);
+}
+
+.el-button--text,
+.el-button.is-link {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.el-input__wrapper,
+.el-select .el-input__wrapper {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 0 0 1px var(--km-border-light) inset;
+  transition:
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+
+.el-input__wrapper:hover,
+.el-select .el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--km-border) inset;
+}
+
+.el-input__wrapper.is-focus,
+.el-select .el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--km-focus) inset, 0 0 0 4px rgba(76, 110, 230, 0.1);
+}
+
+.el-table {
+  --el-table-border-color: var(--km-border-light);
+  --el-table-header-bg-color: transparent;
+  --el-table-row-hover-bg-color: rgba(237, 252, 233, 0.42);
+  --el-table-text-color: var(--km-text);
+  --el-table-header-text-color: var(--km-muted);
+  border-radius: 16px;
+  color: var(--km-text);
+}
+
+.el-table th.el-table__cell {
+  font-size: 12px;
+  font-weight: 640;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.el-table .el-table__cell {
+  padding: 14px 0;
+}
+
+.el-pagination {
+  --el-pagination-button-bg-color: transparent;
+  --el-pagination-hover-color: var(--km-green);
+  color: var(--km-muted);
+}
+
+.el-dialog {
+  border-radius: 20px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.12);
+}
+
+.el-message {
+  border-radius: 14px;
+  box-shadow: var(--km-shadow-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

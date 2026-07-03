@@ -22,6 +22,14 @@
 **/*.log
 
 # Local env
+# 忽略所有实际的 .env 文件（防止含真实密钥/账号的本地配置被误提交）
+# 但保留 .env.example / .env.sample / .env.template 作为模板
+.env
+**/.env
+.env.*
+!**/.env.example
+!**/.env.sample
+!**/.env.template
 **/.env.local
 **/.env.*.local
 

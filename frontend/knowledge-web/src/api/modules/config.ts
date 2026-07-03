@@ -1,4 +1,4 @@
-import request from '@/api/request'
+import { get, put, post, type Envelope } from '@/api/request'
 
 /**
  * F6 系统配置 API 模块（commit #19 钱小晓前端整合）。
@@ -33,9 +33,9 @@ export interface ParserConfig {
 }
 
 export interface ConnectionTestPayload {
-  type: 'embedding' | 'rerank' | 'ocr'
   apiBase: string
   apiKey?: string
+  model?: string
 }
 
 export interface ConnectionTestResult {
@@ -56,30 +56,44 @@ function stripMaskedApiKey<T extends { apiKey?: string }>(payload: T): T {
   return data
 }
 
-export function getEmbeddingConfig() {
-  return request.get<EmbeddingConfig>('/configs/embedding').then((r) => r.data)
+function normalizeApiKey<T extends { apiKey?: string }>(payload: T): T {
+  const data = { ...payload }
+
+  // 掩码代表“不改动”；删除字段后由后端保留旧值
+  if (data.apiKey === '********') {
+    delete data.apiKey
+  }
+
+  // 空字符串必须保留，用于用户主动清空 Key
+  return data
 }
 
-export function updateEmbeddingConfig(data: EmbeddingConfig) {
-  return request.put<EmbeddingConfig>('/configs/embedding', stripMaskedApiKey(data)).then((r) => r.data)
+function unwrap<T>(promise: Promise<Envelope<T>>): Promise<T> {
+  return promise.then((res) => {
+    if (res.code !== 0) {
+      throw new Error(res.message || '请求失败')
+    }
+    return res.data
+  })
 }
+export const getEmbeddingConfig = () =>
+  unwrap(get<EmbeddingConfig>('/configs/embedding'))
 
-export function getRerankConfig() {
-  return request.get<RerankConfig>('/configs/rerank').then((r) => r.data)
-}
+export const updateEmbeddingConfig = (data: EmbeddingConfig) =>
+  unwrap(put<EmbeddingConfig>('/configs/embedding', normalizeApiKey(data)))
 
-export function updateRerankConfig(data: RerankConfig) {
-  return request.put<RerankConfig>('/configs/rerank', stripMaskedApiKey(data)).then((r) => r.data)
-}
+export const getRerankConfig = () =>
+  unwrap(get<RerankConfig>('/configs/rerank'))
 
-export function getParserConfig() {
-  return request.get<ParserConfig>('/configs/parser').then((r) => r.data)
-}
+export const updateRerankConfig = (data: RerankConfig) =>
+  unwrap(put<RerankConfig>('/configs/rerank', normalizeApiKey(data)))
 
-export function updateParserConfig(data: ParserConfig) {
-  return request.put<ParserConfig>('/configs/parser', data).then((r) => r.data)
-}
+export const getParserConfig = () =>
+  unwrap(get<ParserConfig>('/configs/parser'))
+
+export const updateParserConfig = (data: ParserConfig) =>
+  unwrap(put<ParserConfig>('/configs/parser', data))
 
 export function testConfigConnection(data: ConnectionTestPayload) {
-  return request.post<ConnectionTestResult>('/configs/test-connection', stripMaskedApiKey(data)).then((r) => r.data)
+  return unwrap(post<ConnectionTestResult>('/configs/test-connection', stripMaskedApiKey(data)))
 }

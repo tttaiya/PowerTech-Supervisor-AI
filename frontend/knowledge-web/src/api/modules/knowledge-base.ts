@@ -39,9 +39,9 @@ export interface KnowledgeBaseDetailVO extends KnowledgeBaseVO {
 }
 
 export interface PageResult<T> {
-  list: T[]
+  records: T[]
   total: number
-  pageNum: number
+  page: number
   pageSize: number
 }
 
@@ -86,7 +86,7 @@ export function listKnowledgeBases(params: {
   pageNum?: number
   pageSize?: number
 }): Promise<Envelope<PageResult<KnowledgeBaseVO>>> {
-  return request.get('/admin/knowledge-bases/', { params })
+  return request.get('/admin/knowledge-bases', { params })
 }
 
 /** 详情 */
@@ -98,7 +98,7 @@ export function getKnowledgeBaseDetail(id: number): Promise<Envelope<KnowledgeBa
 export function createKnowledgeBase(
   payload: CreateKnowledgeBaseRequest,
 ): Promise<Envelope<KnowledgeBaseVO>> {
-  return request.post('/admin/knowledge-bases/', payload)
+  return request.post('/admin/knowledge-bases', payload)
 }
 
 /** 更新 */

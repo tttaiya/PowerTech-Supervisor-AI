@@ -39,14 +39,14 @@ public class ConfigServiceImpl implements ConfigService {
 
     @Override
     public EmbeddingConfigDTO getEmbeddingConfig() {
-        return configMapper.loadEmbeddingConfig();
+        EmbeddingConfigDTO result = configMapper.loadEmbeddingConfig();
+        result.setApiKey(API_KEY_MASK);
+        return result;
     }
 
     @Override
     public EmbeddingConfigDTO updateEmbeddingConfig(EmbeddingConfigDTO dto) {
-        String apiKey = dto.getApiKey() == null ? "" : dto.getApiKey();
-        boolean masked = apiKey.startsWith(API_KEY_MASK);
-        String resolvedKey = masked ? safeGetValue("embedding.api_key") : apiKey;
+        String resolvedKey = resolveApiKey("embedding.api_key", dto.getApiKey());
 
         updateValue("embedding.model", dto.getModel());
         updateValue("embedding.api_base", dto.getApiBase() == null ? "" : dto.getApiBase());
@@ -64,14 +64,14 @@ public class ConfigServiceImpl implements ConfigService {
 
     @Override
     public RerankConfigDTO getRerankConfig() {
-        return configMapper.loadRerankConfig();
+        RerankConfigDTO result = configMapper.loadRerankConfig();
+        result.setApiKey(API_KEY_MASK);
+        return result;
     }
 
     @Override
     public RerankConfigDTO updateRerankConfig(RerankConfigDTO dto) {
-        String apiKey = dto.getApiKey() == null ? "" : dto.getApiKey();
-        boolean masked = apiKey.startsWith(API_KEY_MASK);
-        String resolvedKey = masked ? safeGetValue("rerank.api_key") : apiKey;
+        String resolvedKey = resolveApiKey("rerank.api_key", dto.getApiKey());
 
         updateValue("rerank.model", dto.getModel());
         updateValue("rerank.api_base", dto.getApiBase() == null ? "" : dto.getApiBase());
@@ -179,6 +179,19 @@ public class ConfigServiceImpl implements ConfigService {
                 configChangedProducer.publishConfigChanged(group, values);
             }
         });
+    }
+
+    /**
+     * 解析API Key，根据传入值决定如何处理
+     * - null 或以掩码开头：保留原值
+     * - 空字符串：清空Key
+     * - 新字符串：替换Key
+     */
+    private String resolveApiKey(String configKey, String incomingApiKey) {
+        if (incomingApiKey == null || incomingApiKey.startsWith(API_KEY_MASK)) {
+            return safeGetValue(configKey);
+        }
+        return incomingApiKey;
     }
 
     // 系统未用，保留 SystemConfig entity 引用防止被 IDE 标记未使用

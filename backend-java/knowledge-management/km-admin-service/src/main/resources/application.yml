@@ -23,7 +23,7 @@ spring:
         server-addr: ${NACOS_ADDR:nacos:8848}
 
 mybatis:
-  mapper-locations: classpath:mapper/*.xml
+  mapper-locations: classpath*:mapper/**/*.xml
   type-aliases-package: com.km.admin.review.entity,com.km.admin.document.entity,com.km.admin.config.dto,com.km.admin.config.entity,com.km.admin.knowledgebase.entity
   configuration:
     map-underscore-to-camel-case: true
