@@ -1,7 +1,7 @@
 // SuperBizAgent 前端应用
 class SuperBizAgentApp {
     constructor() {
-        this.apiBaseUrl = 'http://localhost:9900/api';
+        this.apiBaseUrl = '/api';
         this.currentMode = 'stream';
         this.sessionId = this.generateSessionId();
         this.isStreaming = false;
