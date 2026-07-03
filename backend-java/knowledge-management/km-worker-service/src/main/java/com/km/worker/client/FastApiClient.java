@@ -101,24 +101,30 @@ public class FastApiClient {
      * F5 mock（commit #24 保持原协议；F5 真实实现由黄依诺合并）
      */
     public Map<String, Object> embed(KmTaskMessage msg, Object chunks) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("operation", "EMBED");
-        body.put("task", msg);
-        body.put("chunks", chunks);
-        return assertSuccess(post("/internal/ai/embed", body), "EMBED", msg.traceId);
+    if (msg.targetVersionNo == null) {
+        msg.targetVersionNo = 1L;
     }
 
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("operation", "EMBED");
+    body.put("task", msg);
+    body.put("chunks", chunks);
+    return assertSuccess(post("/internal/ai/embed", body), "EMBED", msg.traceId);
+    }
     /**
      * F5 mock（commit #24 保持原协议）
      */
     public Map<String, Object> reembed(KmTaskMessage msg) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("operation", "REEMBED");
-        body.put("task", msg);
-        body.put("chunks", readReembedChunks(msg));
-        return assertSuccess(post("/internal/ai/embed", body), "EMBED", msg.traceId);
+    if (msg.targetVersionNo == null) {
+        msg.targetVersionNo = 1L;
     }
 
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("operation", "REEMBED");
+    body.put("task", msg);
+    body.put("chunks", readReembedChunks(msg));
+    return assertSuccess(post("/internal/ai/embed", body), "EMBED", msg.traceId);
+}
     /**
      * 删除向量（document 或 version 级）；失败返回 false，PURGE 链路将其标记为 CHROMA 阶段失败
      */

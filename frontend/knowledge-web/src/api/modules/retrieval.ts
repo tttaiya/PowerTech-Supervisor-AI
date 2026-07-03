@@ -1,6 +1,6 @@
 import { post, type Envelope } from '@/api/request'
 
-export type RetrievalMode = 'VECTOR' | 'VECTOR_RERANK'
+export type RetrievalMode = 'SEMANTIC' | 'VECTOR_ONLY' | 'VECTOR_RERANK'
 
 export interface RetrievalSearchRequest {
   query: string

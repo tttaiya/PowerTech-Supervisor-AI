@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import logging
 import tempfile
+import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from app.schemas import ParsedBlock, TaskPayload
 from app.services.ocr import ocr_image
@@ -62,7 +66,7 @@ def parse_document(file_path: str, extension: str | None, payload: TaskPayload) 
 
 
 def parse_pdf(path: Path, payload: TaskPayload) -> list[ParsedBlock]:
-    """PDF：优先 PyMuPDF 提取文本层；文本太少则转图片走 PaddleOCR。"""
+    """PDF：先提取文本层，只对无文本页面执行 OCR。"""
     try:
         import fitz  # PyMuPDF
     except Exception as exc:
@@ -75,55 +79,145 @@ def parse_pdf(path: Path, payload: TaskPayload) -> list[ParsedBlock]:
 
     with doc:
         page_limit = min(payload.max_pdf_pages, MAX_PDF_PAGES)
+
         if doc.page_count > page_limit:
-            raise ValueError(f"PDF 页数超过限制：{doc.page_count} 页（最大 {page_limit} 页）")
+            raise ValueError(
+                f"PDF 页数超过限制：{doc.page_count} 页（最大 {page_limit} 页）"
+            )
+
         if doc.page_count == 0:
             raise ValueError("PDF 不包含可解析页面")
 
-        page_texts = clean_pdf_pages(
-            [page.get_text("text") or "" for page in doc]
+        logger.info(
+            "PDF parse start path=%s pages=%d enableOcr=%s",
+            path,
+            doc.page_count,
+            payload.enable_ocr,
         )
+
+        # 第一步：提取原始文本层。
+        raw_page_texts: list[str] = []
+        extract_started = time.time()
+
+        for page_index, page in enumerate(doc, start=1):
+            page_started = time.time()
+            text = page.get_text("text") or ""
+            raw_page_texts.append(text)
+
+            if (
+                page_index == 1
+                or page_index % 10 == 0
+                or page_index == doc.page_count
+            ):
+                logger.info(
+                    "PDF text progress page=%d/%d chars=%d pageMs=%d totalMs=%d",
+                    page_index,
+                    doc.page_count,
+                    len(text),
+                    int((time.time() - page_started) * 1000),
+                    int((time.time() - extract_started) * 1000),
+                )
+
+        page_texts = clean_pdf_pages(raw_page_texts)
+        total_chars = sum(len(text or "") for text in page_texts)
+
+        logger.info(
+            "PDF text extraction finished pages=%d totalChars=%d",
+            doc.page_count,
+            total_chars,
+        )
+
+        # 第二步：仅 OCR 没有有效文本的页面。
+        if payload.enable_ocr:
+            ocr_page_indexes = [
+                index
+                for index, text in enumerate(page_texts)
+                if len((text or "").strip()) < 10
+            ]
+
+            logger.info(
+                "PDF OCR fallback pages=%d/%d",
+                len(ocr_page_indexes),
+                doc.page_count,
+            )
+
+            if ocr_page_indexes:
+                with tempfile.TemporaryDirectory(
+                    prefix="km_pdf_ocr_"
+                ) as tmp_dir:
+                    ocr_started = time.time()
+
+                    for order, page_index in enumerate(
+                        ocr_page_indexes,
+                        start=1,
+                    ):
+                        page_started = time.time()
+                        page = doc.load_page(page_index)
+
+                        # 原来是 2 倍，CPU OCR 较慢，调整为 1.5 倍。
+                        pix = page.get_pixmap(
+                            matrix=fitz.Matrix(1.5, 1.5),
+                            alpha=False,
+                        )
+
+                        image_path = (
+                            Path(tmp_dir) / f"page_{page_index + 1}.png"
+                        )
+                        pix.save(str(image_path))
+
+                        text, _ = ocr_image(image_path)
+                        text = text or ""
+
+                        if text.strip():
+                            page_texts[page_index] = text
+
+                        logger.info(
+                            "PDF OCR progress page=%d/%d "
+                            "ocrIndex=%d/%d chars=%d "
+                            "pageMs=%d totalMs=%d",
+                            page_index + 1,
+                            doc.page_count,
+                            order,
+                            len(ocr_page_indexes),
+                            len(text),
+                            int((time.time() - page_started) * 1000),
+                            int((time.time() - ocr_started) * 1000),
+                        )
+
+                page_texts = clean_pdf_pages(page_texts)
+
         blocks: list[ParsedBlock] = []
+
         for page_index, text in enumerate(page_texts, start=1):
-            if text:
-                blocks.append(
-                    ParsedBlock(
-                        content=text,
-                        pageNo=page_index,
-                        blockType="paragraph",
-                        chapterPath=None,
-                        charCount=len(text),
-                    )
+            text = text or ""
+
+            if not text.strip():
+                continue
+
+            has_original_text = len(
+                (raw_page_texts[page_index - 1] or "").strip()
+            ) >= 10
+
+            blocks.append(
+                ParsedBlock(
+                    content=text,
+                    pageNo=page_index,
+                    blockType=(
+                        "paragraph" if has_original_text else "ocr"
+                    ),
+                    chapterPath=None,
+                    charCount=len(text),
                 )
+            )
 
-        total_chars = sum(len(block.content) for block in blocks)
-        if total_chars >= payload.min_pdf_text_chars or not payload.enable_ocr:
-            return blocks
+        logger.info(
+            "PDF parse finished pages=%d blocks=%d chars=%d",
+            doc.page_count,
+            len(blocks),
+            sum(len(block.content) for block in blocks),
+        )
 
-        # 扫描 PDF：文本层很少，按页渲染图片后 OCR；临时目录自动清理。
-        ocr_page_texts: list[str] = []
-        with tempfile.TemporaryDirectory(prefix="km_pdf_ocr_") as tmp_dir:
-            for page_index, page in enumerate(doc, start=1):
-                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
-                image_path = Path(tmp_dir) / f"page_{page_index}.png"
-                pix.save(str(image_path))
-                text, _ = ocr_image(image_path)
-                ocr_page_texts.append(text or "")
-
-        ocr_blocks: list[ParsedBlock] = []
-        for page_index, text in enumerate(clean_pdf_pages(ocr_page_texts), start=1):
-            if text:
-                ocr_blocks.append(
-                    ParsedBlock(
-                        content=text,
-                        pageNo=page_index,
-                        blockType="ocr",
-                        chapterPath=None,
-                        charCount=len(text),
-                    )
-                )
-
-        return ocr_blocks
+        return blocks
 
 
 def parse_docx(path: Path) -> list[ParsedBlock]:

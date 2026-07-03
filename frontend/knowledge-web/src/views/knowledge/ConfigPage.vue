@@ -13,7 +13,6 @@
         <template #header>
           <div class="card-header">
             <span>嵌入模型配置</span>
-            <el-tag type="success" effect="plain">US6.1</el-tag>
           </div>
         </template>
 
@@ -45,7 +44,6 @@
         <template #header>
           <div class="card-header">
             <span>重排序模型配置</span>
-            <el-tag type="warning" effect="plain">US6.2</el-tag>
           </div>
         </template>
 
@@ -81,7 +79,6 @@
         <template #header>
           <div class="card-header">
             <span>解析器 / OCR / Worker 配置</span>
-            <el-tag type="info" effect="plain">US4.4</el-tag>
           </div>
         </template>
 

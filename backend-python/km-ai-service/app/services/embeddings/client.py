@@ -9,7 +9,8 @@ import httpx
 DEFAULT_API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_MODEL = "text-embedding-v4"
 DEFAULT_DIMENSION = 1024
-DEFAULT_BATCH_SIZE = 16
+MAX_BATCH_SIZE = 10
+DEFAULT_BATCH_SIZE = MAX_BATCH_SIZE
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
 
@@ -70,7 +71,7 @@ class EmbeddingClient:
         if self.dimension < 1:
             raise ValueError("dimension 必须大于等于 1")
 
-        self.batch_size = batch_size
+        self.batch_size = min(batch_size, MAX_BATCH_SIZE)
         self.timeout_seconds = timeout_seconds
 
         self._owns_http_client = http_client is None

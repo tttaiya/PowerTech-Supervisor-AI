@@ -126,6 +126,16 @@ public class DocumentProcessingService {
             // F4 commit #24：提取 errorStage
             String stage = extractStage(e);
             String errMsg = shortMessage(e);
+            log.error(
+                    "Task processing failed: taskId={}, docId={}, taskType={}, stage={}, claimed={}, filePath={}",
+                    msg.taskId,
+                    msg.docId,
+                    msg.taskType,
+                    stage,
+                    msg.claimToken != null,
+                    msg.filePath,
+                    e
+            );
             if (msg.claimToken != null) {
                 resultProducer.publishFailure(msg, "TASK_FAILED", stage, errMsg);
             }

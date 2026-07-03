@@ -60,7 +60,7 @@
         <div class="filter-field mode-field">
           <label>检索模式</label>
           <el-radio-group v-model="mode" class="mode-group">
-            <el-radio-button label="VECTOR">语义向量检索</el-radio-button>
+            <el-radio-button label="SEMANTIC">语义向量检索</el-radio-button>
             <el-radio-button label="VECTOR_RERANK">向量检索 + 重排序</el-radio-button>
           </el-radio-group>
         </div>
@@ -178,7 +178,7 @@ import RetrievalResultCard from '@/components/knowledge/RetrievalResultCard.vue'
 
 const query = ref('')
 const tagsInput = ref('')
-const mode = ref<RetrievalMode>('VECTOR')
+const mode = ref<RetrievalMode>('SEMANTIC')
 const topK = ref(10)
 const similarityThreshold = ref(0.3)
 const rerankTopN = ref(10)
@@ -307,7 +307,7 @@ async function submitSearch() {
 function resetFilters() {
   selectedKnowledgeBaseIds.value = []
   tagsInput.value = ''
-  mode.value = 'VECTOR'
+  mode.value = 'SEMANTIC'
   topK.value = 10
   similarityThreshold.value = 0.3
   rerankTopN.value = 10
@@ -317,7 +317,8 @@ function resetFilters() {
 
 function modeLabel(value: string) {
   const map: Record<string, string> = {
-    VECTOR: '语义向量检索',
+    SEMANTIC: '语义向量检索',
+    VECTOR_ONLY: '向量检索',
     VECTOR_RERANK: '向量检索 + 重排序',
   }
   return map[value] || value

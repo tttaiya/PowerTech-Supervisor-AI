@@ -267,6 +267,8 @@ services:
       TASK_FILE_ROOT: /data/task-files
       AI_CONNECT_TIMEOUT_MS: 5000
       AI_READ_TIMEOUT_MS: 30000
+      KM_AI_READ_TIMEOUT_MS: 900000
+      KM_AI_CONNECT_TIMEOUT_MS: 10000
     volumes:
       # F4 commit #25：task-files 命名卷，Worker 读写
       - task-files:/data/task-files

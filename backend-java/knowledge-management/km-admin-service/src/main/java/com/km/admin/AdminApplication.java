@@ -72,19 +72,9 @@ public class AdminApplication {
 @RequestMapping("/api/v1/documents")
 class TaskController {
     private final TaskCommandService commandService;
-    private final JdbcTemplate jdbcTemplate;
 
-    TaskController(TaskCommandService commandService, JdbcTemplate jdbcTemplate) {
+    TaskController(TaskCommandService commandService) {
         this.commandService = commandService;
-        this.jdbcTemplate = jdbcTemplate;
-    }
-
-    @GetMapping("/{docId}/tasks")
-    public List<Map<String, Object>> tasks(@PathVariable Long docId) {
-        return jdbcTemplate.queryForList(
-                "select id, doc_id, task_type, trigger_source, task_status, progress, error_stage, error_message, retry_count, created_at, started_at, finished_at " +
-                        "from km_document_process_task where doc_id=? order by id desc",
-                docId);
     }
 
     @PostMapping("/{docId}/retry")
@@ -264,19 +254,47 @@ class TaskCommandService {
     }
 
     public Long createUserRetryTask(Long docId, String userId) {
-        TaskRow failed = jdbcTemplate.query(
-                "select * from km_document_process_task where doc_id=? and task_status='FAILED' " +
-                        "and task_type in ('PROCESS','REPROCESS','REEMBED') order by id desc limit 1",
-                taskMapper(), docId).stream().findFirst()
-                .orElseThrow(() -> new IllegalStateException("没有可重试的失败任务"));
-        if (failed.retryCount >= 3) {
-            throw new IllegalStateException("重试次数已达到上限 3 次");
-        }
-        CreateTaskCommand cmd = new CreateTaskCommand(failed.taskType, docId, userId, "USER_RETRY");
-        cmd.sourceTaskId = failed.id;
-        cmd.retryCount = failed.retryCount + 1;
-        cmd.idempotencyKey = "RETRY:" + failed.id + ":" + cmd.retryCount;
-        return createWithQuota(cmd);
+    TaskRow failed = jdbcTemplate.query(
+            "select * from km_document_process_task where doc_id=? and task_status='FAILED' " +
+                    "and task_type in ('PROCESS','REPROCESS','REEMBED') order by id desc limit 1",
+            taskMapper(), docId).stream().findFirst()
+            .orElseThrow(() -> new IllegalStateException("没有可重试的失败任务"));
+
+    Integer configuredMaxRetryCount = jdbcTemplate.queryForObject(
+            "select coalesce((" +
+                    "select cast(config_value as unsigned) " +
+                    "from km_system_config " +
+                    "where config_key='parser.max_retry_count' " +
+                    "limit 1" +
+                    "), 3)",
+            Integer.class
+    );
+
+    int maxRetryCount =
+            configuredMaxRetryCount == null || configuredMaxRetryCount < 0
+                    ? 3
+                    : configuredMaxRetryCount;
+
+    if (failed.retryCount >= maxRetryCount) {
+        throw new IllegalStateException(
+                "重试次数已达到上限 " + maxRetryCount + " 次"
+        );
+    }
+
+    CreateTaskCommand cmd =
+            new CreateTaskCommand(
+                    failed.taskType,
+                    docId,
+                    userId,
+                    "USER_RETRY"
+            );
+
+    cmd.sourceTaskId = failed.id;
+    cmd.retryCount = failed.retryCount + 1;
+    cmd.idempotencyKey =
+            "RETRY:" + failed.id + ":" + cmd.retryCount;
+
+    return createWithQuota(cmd);
     }
 
     private Map<String, Object> findActiveChunkForReembed(Long docId, Long chunkId) {
@@ -552,8 +570,12 @@ class TaskRepublishScheduler {
         jdbcTemplate.update("update km_document_process_task set dispatch_status='PENDING', updated_at=now() " +
                 "where task_status='QUEUED' and dispatch_status='PUBLISHED' and published_at < date_sub(now(), interval 5 minute) and worker_claim_token is null");
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "select * from km_document_process_task where task_status='QUEUED' and dispatch_status='PENDING' " +
-                        "and coalesce(last_dispatch_attempt_at, created_at) < date_sub(now(), interval 5 minute) limit 50");
+                "select t.*, d.object_key, d.extension " +
+                "from km_document_process_task t " +
+                "join km_document d on d.id = t.doc_id " +
+                "where t.task_status='QUEUED' and t.dispatch_status='PENDING' " +
+                "and coalesce(t.last_dispatch_attempt_at, t.created_at) < date_sub(now(), interval 5 minute) " +
+                "limit 50");
         for (Map<String, Object> row : rows) {
             KmTaskMessage msg = KmTaskMessage.fromRow(row, objectMapper);
             publisher.sendNowAndConfirm("km.exchange", routingKey(String.valueOf(row.get("task_type"))), msg);
@@ -616,28 +638,118 @@ class TaskResultConsumer {
     }
 
     private void success(KmTaskResultMessage msg) {
-        if ("PROCESS".equals(msg.taskType)) {
-            insertChunks(msg, true);
-            jdbcTemplate.update("update km_document set document_status='PENDING_REVIEW', updated_at=now() where id=?", msg.docId);
-        } else if ("REPROCESS".equals(msg.taskType)) {
-            insertChunks(msg, false);
-            jdbcTemplate.update("update km_document_version set version_status='PENDING_REVIEW' where doc_id=? and version_no=?",
-                    msg.docId, msg.targetVersionNo);
-            jdbcTemplate.update("update km_document set document_status='READY', updated_at=now() where id=?",
-                    msg.docId);
-        } else if ("REEMBED".equals(msg.taskType)) {
-            Map<String, Object> payload = msg.taskPayloadJson == null ? Collections.emptyMap() : readMap(msg.taskPayloadJson);
-            Object chunkId = payload.get("chunkId");
-            jdbcTemplate.update("update km_document_chunk set vector_status='READY', vector_id=?, updated_at=now() where id=?",
-                    msg.vectorIds == null || msg.vectorIds.isEmpty() ? null : msg.vectorIds.get(0), chunkId);
-        } else if ("PURGE".equals(msg.taskType)) {
-            purgeSuccess(msg);
-            return;
+    if ("PROCESS".equals(msg.taskType)) {
+        insertChunks(msg, true);
+
+        /*
+         * 首次处理成功后，以当前活动切片的最大版本号作为文档当前版本。
+         * 正常情况下首次处理版本为 1。
+         */
+        Long activeVersionNo = jdbcTemplate.queryForObject(
+                "select coalesce(max(version_no), 1) " +
+                        "from km_document_chunk " +
+                        "where doc_id=? and is_active=1",
+                Long.class,
+                msg.docId
+        );
+
+        if (activeVersionNo == null || activeVersionNo < 1) {
+            activeVersionNo = 1L;
         }
-        jdbcTemplate.update("update km_document_process_task set task_status='SUCCESS', progress=100, finished_at=now(), last_event_seq=?, last_event_id=?, updated_at=now() where id=?",
-                msg.eventSeq, msg.eventId, msg.taskId);
-        writeLog(msg.docId, msg.stage, "SUCCESS", null);
+
+        /*
+         * 同步：
+         * 1. 文档状态
+         * 2. 当前版本号
+         * 3. 下一可用版本号
+         * 4. 实际切片数量
+         * 5. 清除历史错误
+         */
+        jdbcTemplate.update(
+                "update km_document set " +
+                        "document_status='PENDING_REVIEW', " +
+                        "current_version_no=?, " +
+                        "next_version_no=greatest(coalesce(next_version_no, 1), ? + 1), " +
+                        "chunk_count=(" +
+                        "select count(*) " +
+                        "from km_document_chunk " +
+                        "where doc_id=? and is_active=1" +
+                        "), " +
+                        "error_stage=null, " +
+                        "error_message=null, " +
+                        "updated_at=now() " +
+                        "where id=?",
+                activeVersionNo,
+                activeVersionNo,
+                msg.docId,
+                msg.docId
+        );
+    } else if ("REPROCESS".equals(msg.taskType)) {
+        insertChunks(msg, false);
+
+        jdbcTemplate.update(
+                "update km_document_version " +
+                        "set version_status='PENDING_REVIEW' " +
+                        "where doc_id=? and version_no=?",
+                msg.docId,
+                msg.targetVersionNo
+        );
+
+        /*
+         * 重新处理生成的是候选版本。
+         * 当前正式版本仍可继续使用，所以文档保持 READY。
+         */
+        jdbcTemplate.update(
+                "update km_document set " +
+                        "document_status='READY', " +
+                        "error_stage=null, " +
+                        "error_message=null, " +
+                        "updated_at=now() " +
+                        "where id=?",
+                msg.docId
+        );
+    } else if ("REEMBED".equals(msg.taskType)) {
+        Map<String, Object> payload =
+                msg.taskPayloadJson == null
+                        ? Collections.emptyMap()
+                        : readMap(msg.taskPayloadJson);
+
+        Object chunkId = payload.get("chunkId");
+
+        jdbcTemplate.update(
+                "update km_document_chunk set " +
+                        "vector_status='READY', " +
+                        "vector_id=?, " +
+                        "updated_at=now() " +
+                        "where id=?",
+                msg.vectorIds == null || msg.vectorIds.isEmpty()
+                        ? null
+                        : msg.vectorIds.get(0),
+                chunkId
+        );
+    } else if ("PURGE".equals(msg.taskType)) {
+        purgeSuccess(msg);
+        return;
     }
+
+    jdbcTemplate.update(
+            "update km_document_process_task set " +
+                    "task_status='SUCCESS', " +
+                    "progress=100, " +
+                    "error_stage=null, " +
+                    "error_message=null, " +
+                    "finished_at=now(), " +
+                    "last_event_seq=?, " +
+                    "last_event_id=?, " +
+                    "updated_at=now() " +
+                    "where id=?",
+            msg.eventSeq,
+            msg.eventId,
+            msg.taskId
+    );
+
+    writeLog(msg.docId, msg.stage, "SUCCESS", null);
+}
 
     private void insertChunks(KmTaskResultMessage msg, boolean active) {
         if (msg.chunks == null || msg.chunks.isEmpty()) {
@@ -864,6 +976,8 @@ class KmTaskMessage {
         m.taskType = String.valueOf(row.get("task_type"));
         m.triggerSource = String.valueOf(row.get("trigger_source"));
         m.traceId = String.valueOf(row.get("trace_id"));
+        m.filePath = row.get("object_key") == null ? null : String.valueOf(row.get("object_key"));
+        m.extension = row.get("extension") == null ? null : String.valueOf(row.get("extension"));
         m.strategyVersion = row.get("strategy_version") == null ? null : ((Number) row.get("strategy_version")).longValue();
         m.targetVersionNo = row.get("target_version_no") == null ? null : ((Number) row.get("target_version_no")).longValue();
         m.taskPayloadJson = row.get("task_payload_json") == null ? "{}" : String.valueOf(row.get("task_payload_json"));

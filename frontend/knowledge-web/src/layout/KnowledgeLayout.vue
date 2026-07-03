@@ -1,6 +1,12 @@
 <template>
   <el-container class="knowledge-layout">
     <el-header class="km-header">
+      <button class="km-back" type="button" aria-label="返回智能问答" title="返回智能问答" @click="goBackToPortal">
+        <el-icon class="km-back-icon">
+          <ArrowLeft />
+        </el-icon>
+        <span class="km-back-text">返回</span>
+      </button>
       <div class="km-brand">
         <span class="km-brand-mark" aria-hidden="true"></span>
         <div>
@@ -41,6 +47,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ArrowLeft } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -66,6 +73,15 @@ function logout() {
   if (typeof window !== 'undefined') {
     window.localStorage.removeItem('access_token')
     window.localStorage.removeItem('username')
+    window.location.href = '/'
+  }
+}
+
+function goBackToPortal() {
+  // 跳回统一智慧问答门户首页。
+  // 与 logout() 的区别：这里不清理 access_token / username，
+  // 用户从门户切过来再切回去不需要重新登录。
+  if (typeof window !== 'undefined') {
     window.location.href = '/'
   }
 }
@@ -110,6 +126,51 @@ void router
   border-bottom: 1px solid rgba(217, 217, 221, 0.78);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+}
+.km-back {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+  height: 34px;
+  margin-right: 14px;
+  padding: 0 12px 0 10px;
+  color: var(--km-text);
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(217, 217, 221, 0.78);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 560;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+.km-back:hover {
+  background: var(--km-green-soft);
+  border-color: rgba(0, 60, 51, 0.22);
+  color: var(--km-green);
+  transform: translateY(-1px);
+}
+.km-back:active {
+  transform: translateY(0);
+}
+.km-back-icon {
+  font-size: 14px;
+}
+.km-back-text {
+  line-height: 1;
+}
+/* 小屏：只保留图标，文字隐藏 */
+@media (max-width: 768px) {
+  .km-back-text {
+    display: none;
+  }
+  .km-back {
+    margin-right: 10px;
+    padding: 0 9px;
+  }
 }
 .km-brand {
   display: flex;
