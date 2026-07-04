@@ -69,7 +69,7 @@ public class AdminApplication {
 }
 
 @RestController
-@RequestMapping("/api/v1/documents")
+@RequestMapping("/api/v1/task-documents")
 class TaskController {
     private final TaskCommandService commandService;
 

@@ -5,6 +5,10 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $ComposeFile = Join-Path $Root "infra\docker\docker-compose.demo.yml"
+$EnvFile = Join-Path $Root ".env"
+
+# 始终从项目根加载 .env（compose 默认只在 compose 文件所在目录找 .env，容易踩坑）
+$ComposeArgs = @("-f", $ComposeFile, "--env-file", $EnvFile)
 
 Write-Host "检查 Docker..."
 docker version | Out-Null
@@ -12,9 +16,9 @@ docker compose version | Out-Null
 
 Write-Host "启动知识管理全量环境..."
 if ($NoBuild) {
-    docker compose -f $ComposeFile up -d
+    docker compose @ComposeArgs up -d
 } else {
-    docker compose -f $ComposeFile up -d --build
+    docker compose @ComposeArgs up -d --build
 }
 
 Write-Host "等待服务健康，首次构建可能需要数分钟..."

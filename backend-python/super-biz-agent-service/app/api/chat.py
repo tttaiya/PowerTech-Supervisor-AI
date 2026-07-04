@@ -96,7 +96,7 @@ async def _run_chat(request: ChatRequest, user: User, db: Session) -> dict:
     record_process_step(process_steps, "intent_detection", "success", intent.reason or "已完成意图识别")
     conversations.update_message(user_message, intent=intent.intent)
     db.commit()
-    knowledge_base_ids = request.knowledge_base_ids or SettingsService(db).get("rag.bound_knowledge_base_ids", [])
+    knowledge_base_ids = request.knowledge_base_ids or []
 
     try:
         if intent.intent == "knowledge_qa":
@@ -245,7 +245,7 @@ async def chat_stream(request: ChatRequest, user: User = Depends(require_login),
             intent = IntentService(db).detect(request.question or "", request.mode)
             conversations.update_message(user_message, intent=intent.intent)
             db.commit()
-            knowledge_base_ids = request.knowledge_base_ids or SettingsService(db).get("rag.bound_knowledge_base_ids", [])
+            knowledge_base_ids = request.knowledge_base_ids or []
 
             if created:
                 yield sse_event("session_created", session_id=session.id)

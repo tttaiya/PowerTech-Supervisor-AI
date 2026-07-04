@@ -168,9 +168,9 @@ services:
       ALLOWED_DOCUMENT_ROOT: /data/task-files
 
       # F5：FastAPI 容器通过 Docker 服务名访问 ChromaDB
-      CHROMA_HOST: ${CHROMA_HOST:-chromadb}
-      CHROMA_PORT: ${CHROMA_PORT:-8000}
-      CHROMA_COLLECTION: ${CHROMA_COLLECTION:-km_document_chunks}
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: 8000
+      CHROMA_COLLECTION: km_document_chunks
 
       # F5：阿里云百炼 Embedding
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
