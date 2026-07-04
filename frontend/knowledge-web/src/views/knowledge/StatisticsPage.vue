@@ -3,8 +3,19 @@
     <header class="page-header">
       <div>
         <p class="eyebrow">知识管理</p>
-        <h1>数据统计</h1>
+        <h1>
+          数据统计
+          <el-tooltip content="展示知识库、文档、切片、审核与处理任务的整体成果。" placement="right">
+            <span class="km-info-dot">?</span>
+          </el-tooltip>
+        </h1>
         <p class="subtitle">实时反映知识库、文档与处理任务状态</p>
+        <div class="km-chip-row stats-hero-chips">
+          <span class="km-capability-chip">成果看板</span>
+          <span class="km-capability-chip">趋势追踪</span>
+          <span class="km-capability-chip">审核规模</span>
+          <span class="km-capability-chip">任务状态</span>
+        </div>
       </div>
       <el-button :loading="loading" type="primary" plain @click="reload">手动刷新</el-button>
     </header>
@@ -19,29 +30,33 @@
     <!-- 加载 / 正常态骨架与内容 -->
     <template v-else>
       <section class="metric-grid" aria-label="核心指标">
-        <el-card v-for="card in coreCards" :key="card.key" class="metric-card core" shadow="never" v-loading="loading">
-          <template #header>
-            <div class="metric-header">
-              <span class="metric-title">{{ card.title }}</span>
-              <el-tag :type="card.tagType" effect="plain" size="small">{{ card.tag }}</el-tag>
-            </div>
-          </template>
-          <div class="metric-value">{{ formatNumber(card.value) }}</div>
-          <p class="metric-desc">{{ card.desc }}</p>
-        </el-card>
+        <el-tooltip v-for="card in coreCards" :key="card.key" :content="card.desc" placement="top">
+          <el-card class="metric-card core" shadow="never" v-loading="loading">
+            <template #header>
+              <div class="metric-header">
+                <span class="metric-title">{{ card.title }}</span>
+                <el-tag :type="card.tagType" effect="plain" size="small">{{ card.tag }}</el-tag>
+              </div>
+            </template>
+            <div class="metric-value">{{ formatNumber(card.value) }}</div>
+            <p class="metric-desc">{{ card.desc }}</p>
+          </el-card>
+        </el-tooltip>
       </section>
 
       <section class="metric-grid status-grid" aria-label="状态指标">
-        <el-card v-for="card in statusCards" :key="card.key" class="metric-card status" shadow="never" v-loading="loading">
-          <template #header>
-            <div class="metric-header">
-              <span class="metric-title">{{ card.title }}</span>
-              <el-tag :type="card.tagType" effect="plain" size="small">{{ card.tag }}</el-tag>
-            </div>
-          </template>
-          <div class="metric-value">{{ formatNumber(card.value) }}</div>
-          <p class="metric-desc">{{ card.desc }}</p>
-        </el-card>
+        <el-tooltip v-for="card in statusCards" :key="card.key" :content="card.desc" placement="top">
+          <el-card class="metric-card status" shadow="never" v-loading="loading">
+            <template #header>
+              <div class="metric-header">
+                <span class="metric-title">{{ card.title }}</span>
+                <el-tag :type="card.tagType" effect="plain" size="small">{{ card.tag }}</el-tag>
+              </div>
+            </template>
+            <div class="metric-value">{{ formatNumber(card.value) }}</div>
+            <p class="metric-desc">{{ card.desc }}</p>
+          </el-card>
+        </el-tooltip>
       </section>
 
       <el-card class="trend-card" shadow="never">
@@ -65,7 +80,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import {
@@ -157,6 +172,14 @@ const coreCards = computed<CoreCard[]>(() => [
     value: safeNumber('chunkTotal'),
     desc: 'is_active=1 且所属文档未删除的切片数',
   },
+  {
+    key: 'pending-core',
+    title: '待审核文档',
+    tag: '审核',
+    tagType: 'warning',
+    value: safeNumber('documentPendingReview'),
+    desc: '等待审核工作台处理的文档数',
+  },
 ])
 
 const statusCards = computed<StatusCard[]>(() => [
@@ -242,11 +265,12 @@ function buildChartOption(data: StatsOverview) {
         smooth: false,
         symbol: 'circle',
         symbolSize: 6,
-        lineStyle: { width: 2 },
-        areaStyle: { opacity: 0.15 },
-        itemStyle: { color: '#409EFF' },
+        itemStyle: { color: '#72efb6' },
+        lineStyle: { width: 3, color: '#72efb6' },
+        areaStyle: { opacity: 0.18, color: '#4fd69a' },
       },
     ],
+    textStyle: { color: '#8da099' },
   }
 }
 
@@ -329,9 +353,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .stats-page {
-  min-height: 100vh;
-  padding: 32px;
-  background: #eef2f7;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
 
 .page-header {
@@ -339,27 +363,38 @@ onBeforeUnmount(() => {
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  max-width: 1280px;
-  margin: 0 auto 24px;
+  padding: 28px;
+  border: 1px solid var(--km-border-light);
+  border-radius: var(--km-radius-xl);
+  background:
+    linear-gradient(135deg, rgba(79, 214, 154, 0.16), rgba(255, 255, 255, 0.04) 46%, rgba(244, 184, 96, 0.07)),
+    rgba(12, 22, 19, 0.72);
+  box-shadow: var(--km-shadow-card);
 }
 
 .page-header .eyebrow {
-  margin: 0 0 4px;
-  color: #64748b;
-  font-size: 14px;
+  margin: 0 0 8px;
+  color: var(--km-green-strong);
+  font-family: "SF Mono", "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 720;
 }
 
 .page-header h1 {
   margin: 0;
-  color: #111827;
-  font-size: 28px;
-  font-weight: 650;
+  color: var(--km-ink);
+  font-size: clamp(30px, 4vw, 40px);
+  font-weight: 720;
 }
 
 .page-header .subtitle {
   margin: 8px 0 0;
-  color: #64748b;
+  color: var(--km-muted);
   font-size: 14px;
+}
+
+.stats-hero-chips {
+  margin-top: 18px;
 }
 
 .state-card {
@@ -373,10 +408,9 @@ onBeforeUnmount(() => {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
-  max-width: 1280px;
-  margin: 0 auto 16px;
+  margin: 0;
 }
 
 .metric-grid.status-grid {
@@ -384,8 +418,7 @@ onBeforeUnmount(() => {
 }
 
 .metric-card {
-  border-radius: 8px;
-  border-color: #dbe3ee;
+  border-radius: var(--km-radius-lg);
 }
 
 .metric-header {
@@ -397,29 +430,27 @@ onBeforeUnmount(() => {
 
 .metric-title {
   font-weight: 650;
-  color: #1f2937;
+  color: var(--km-ink);
 }
 
 .metric-value {
   font-size: 32px;
   font-weight: 700;
-  color: #111827;
+  color: var(--km-green-strong);
   letter-spacing: 0;
   line-height: 1.2;
 }
 
 .metric-desc {
   margin: 8px 0 0;
-  color: #64748b;
+  color: var(--km-muted);
   font-size: 13px;
   min-height: 18px;
 }
 
 .trend-card {
-  max-width: 1280px;
-  margin: 16px auto 0;
-  border-radius: 8px;
-  border-color: #dbe3ee;
+  margin: 0;
+  border-radius: var(--km-radius-xl);
 }
 
 .trend-header {
@@ -431,17 +462,17 @@ onBeforeUnmount(() => {
 
 .trend-title {
   font-weight: 650;
-  color: #1f2937;
+  color: var(--km-ink);
 }
 
 .trend-sub {
   margin: 6px 0 0;
-  color: #64748b;
+  color: var(--km-muted);
   font-size: 13px;
 }
 
 .trend-meta {
-  color: #94a3b8;
+  color: var(--km-faint);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -463,7 +494,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #94a3b8;
+  color: var(--km-muted);
   font-size: 14px;
   pointer-events: none;
 }
@@ -477,7 +508,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 640px) {
   .stats-page {
-    padding: 20px;
+    padding: 0;
   }
   .page-header {
     flex-direction: column;

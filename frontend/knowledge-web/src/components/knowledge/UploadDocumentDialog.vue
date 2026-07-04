@@ -11,6 +11,7 @@ import {
   validateTags,
   validateUploadFile,
 } from '@/api/modules/document'
+import type { DocumentItem } from '@/types/knowledge'
 
 const props = defineProps<{
   kbId: number
@@ -18,7 +19,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'success'): void
+  (e: 'success', documents: DocumentItem[]): void
   (e: 'update:visible', value: boolean): void
 }>()
 
@@ -247,7 +248,7 @@ async function handleUpload() {
     })
 
     const files = validItems.map((item) => item.file)
-    await uploadDocuments(props.kbId, files, tags)
+    const uploadedDocs = await uploadDocuments(props.kbId, files, tags)
 
     validItems.forEach((item) => {
       item.status = 'success'
@@ -256,7 +257,7 @@ async function handleUpload() {
 
     const tagHint = tags.length ? `，标签：${tags.join('、')}` : ''
     ElMessage.success(`成功上传 ${validItems.length} 个文档${tagHint}`)
-    emit('success')
+    emit('success', uploadedDocs || [])
     closeDialog()
     clearQueue()
     tagInput.value = ''
@@ -380,17 +381,17 @@ function handleClose() {
 
 <style scoped>
 .drop-zone {
-  border: 1px dashed var(--el-border-color);
-  border-radius: 8px;
+  border: 1px dashed var(--km-border);
+  border-radius: var(--km-radius-lg);
   padding: 24px 20px;
   text-align: center;
-  background: var(--el-fill-color-light);
+  background: rgba(255, 255, 255, 0.035);
   transition: border-color 0.2s, background-color 0.2s;
 }
 
 .drop-zone.is-dragover {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+  border-color: rgba(114, 239, 182, 0.5);
+  background: rgba(79, 214, 154, 0.1);
 }
 
 .drop-zone.is-uploading {
@@ -406,7 +407,7 @@ function handleClose() {
 .drop-title {
   margin: 8px 0 4px;
   font-size: 14px;
-  color: var(--el-text-color-primary);
+  color: var(--km-ink);
 }
 
 .drop-subtitle {
@@ -419,12 +420,13 @@ function handleClose() {
   display: inline-block;
   margin-top: 4px;
   padding: 8px 20px;
-  color: #fff;
-  background: var(--el-color-primary);
-  border: none;
-  border-radius: 4px;
+  color: #03110c;
+  background: var(--km-green-strong);
+  border: 1px solid rgba(114, 239, 182, 0.7);
+  border-radius: 999px;
   cursor: pointer;
   font-size: 14px;
+  font-weight: 650;
 }
 
 .native-upload-btn:disabled {

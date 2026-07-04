@@ -33,6 +33,7 @@
                coalesce(is_edited, 0) as is_edited
         from km_document_chunk
         where doc_id = #{docId}
+          and coalesce(vector_status, '') != 'DELETED'
           and (
             is_active = 1
             or version_no = (
@@ -65,6 +66,7 @@
         join km_document d
           on d.id = c.doc_id
         where c.id = #{chunkId}
+          and coalesce(c.vector_status, '') != 'DELETED'
           and (
             c.is_active = 1
             or c.version_no = (

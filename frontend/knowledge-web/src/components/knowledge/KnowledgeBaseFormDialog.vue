@@ -228,21 +228,33 @@ async function onSubmit() {
   }
   submitting.value = true
   try {
-    const payload = {
+    const basePayload = {
       name: form.name,
       category: form.category,
-      retrievalStrategy: form.retrievalStrategy,
-      chunkStrategy: form.chunkStrategy,
-      chunkSize: form.chunkSize,
-      chunkOverlap: form.chunkOverlap,
-      separatorsJson: form.separatorsJson,
       description: form.description,
-      confirmation: form.confirmation,
     }
     let resp
     if (props.mode === 'create') {
-      resp = await createKnowledgeBase(payload)
+      resp = await createKnowledgeBase({
+        ...basePayload,
+        retrievalStrategy: form.retrievalStrategy,
+        chunkStrategy: form.chunkStrategy,
+        chunkSize: form.chunkSize,
+        chunkOverlap: form.chunkOverlap,
+        ...optionalSeparatorsJson(),
+      })
     } else {
+      const payload = strategyChanged.value
+        ? {
+            ...basePayload,
+            retrievalStrategy: form.retrievalStrategy,
+            chunkStrategy: form.chunkStrategy,
+            chunkSize: form.chunkSize,
+            chunkOverlap: form.chunkOverlap,
+            ...optionalSeparatorsJson(),
+            confirmation: form.confirmation,
+          }
+        : basePayload
       resp = await updateKnowledgeBase(props.kb!.id, payload, form.confirmation || undefined)
     }
     if (resp.code === 0) {
@@ -266,5 +278,21 @@ async function onSubmit() {
   } finally {
     submitting.value = false
   }
+}
+
+function optionalSeparatorsJson() {
+  const raw = form.separatorsJson?.trim()
+  if (!raw) {
+    return {}
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.length === 0) {
+      return {}
+    }
+  } catch {
+    return {}
+  }
+  return { separatorsJson: raw }
 }
 </script>

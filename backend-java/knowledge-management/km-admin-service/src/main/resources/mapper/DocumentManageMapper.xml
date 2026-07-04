@@ -27,6 +27,19 @@
         <result property="updatedAt"        column="updated_at"/>
     </resultMap>
 
+    <resultMap id="DocumentChunkMap" type="com.km.admin.document.vo.DocumentChunkVO">
+        <id     property="id"           column="id"/>
+        <result property="chunkIndex"   column="chunk_index"/>
+        <result property="chapterPath"  column="chapter_path"/>
+        <result property="pageNo"       column="page_no"/>
+        <result property="chunkType"    column="chunk_type"/>
+        <result property="content"      column="content"/>
+        <result property="charCount"    column="char_count"/>
+        <result property="vectorId"     column="vector_id"/>
+        <result property="vectorStatus" column="vector_status"/>
+        <result property="isEdited"     column="is_edited"/>
+    </resultMap>
+
     <sql id="Base_Column_List">
         id, kb_id, user_id, file_name, object_key, mime_type, file_size, file_hash,
         extension, document_status, error_stage, error_message, chunk_count, retry_count,
@@ -154,6 +167,43 @@
         FROM km_document_process_task
         WHERE doc_id = #{docId}
         ORDER BY id DESC
+    </select>
+
+    <select id="selectChunksByDocId" resultMap="DocumentChunkMap">
+        SELECT c.id,
+               c.chunk_index,
+               c.chapter_path,
+               c.page_no,
+               c.chunk_type,
+               c.content,
+               c.char_count,
+               c.vector_id,
+               c.vector_status,
+               COALESCE(c.is_edited, 0) AS is_edited
+        FROM km_document_chunk c
+        JOIN km_document d ON d.id = c.doc_id
+        WHERE c.doc_id = #{docId}
+          AND c.is_active = 1
+          AND c.version_no = d.current_version_no
+          AND d.is_deleted = 0
+        <if test="keyword != null and keyword != ''">
+          AND c.content LIKE CONCAT('%', #{keyword}, '%')
+        </if>
+        ORDER BY c.chunk_index ASC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countChunksByDocId" resultType="long">
+        SELECT COUNT(1)
+        FROM km_document_chunk c
+        JOIN km_document d ON d.id = c.doc_id
+        WHERE c.doc_id = #{docId}
+          AND c.is_active = 1
+          AND c.version_no = d.current_version_no
+          AND d.is_deleted = 0
+        <if test="keyword != null and keyword != ''">
+          AND c.content LIKE CONCAT('%', #{keyword}, '%')
+        </if>
     </select>
 
     <update id="updateUploaderSnapshot">

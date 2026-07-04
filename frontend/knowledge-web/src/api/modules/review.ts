@@ -1,5 +1,6 @@
 import { del, get, patch, post } from '@/api/request'
 import type { PageResult } from '@/types/knowledge'
+import { friendlyEnvelopeMessage } from '@/utils/error'
 
 export interface PendingReviewDocument {
   docId: number
@@ -31,6 +32,9 @@ export interface ReviewDocumentDetail {
   kbName?: string
   originalName: string
   status: string
+  createdAt?: string
+  updatedAt?: string
+  currentVersionNo?: number
   tags?: string[]
   chunkCount?: number
   chunks: ReviewChunk[]
@@ -39,17 +43,19 @@ export interface ReviewDocumentDetail {
 export interface ReviewRecord {
   id: number
   docId: number
+  chunkId?: number
   action: string
   comment?: string
   operatorUserId?: string
   operatorName?: string
   createdAt?: string
+  source?: 'REVIEW' | 'CHUNK' | string
 }
 
 function unwrap<T>(promise: Promise<{ code: number; message: string; data: T }>) {
   return promise.then((res) => {
     if (res.code !== 0) {
-      throw new Error(res.message || '请求失败')
+      throw new Error(friendlyEnvelopeMessage(res.message, '请求失败'))
     }
     return res.data
   })

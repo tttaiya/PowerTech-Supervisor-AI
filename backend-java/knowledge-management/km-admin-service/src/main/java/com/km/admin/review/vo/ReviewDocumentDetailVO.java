@@ -1,5 +1,6 @@
 package com.km.admin.review.vo;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -12,6 +13,9 @@ public class ReviewDocumentDetailVO {
     private String kbName;
     private String originalName;
     private String status;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private Integer currentVersionNo;
     private List<String> tags;
     private Integer chunkCount;
     private List<ReviewChunkVO> chunks;
@@ -30,6 +34,15 @@ public class ReviewDocumentDetailVO {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public Integer getCurrentVersionNo() { return currentVersionNo; }
+    public void setCurrentVersionNo(Integer currentVersionNo) { this.currentVersionNo = currentVersionNo; }
 
     public List<String> getTags() { return tags; }
     public void setTags(List<String> tags) { this.tags = tags; }

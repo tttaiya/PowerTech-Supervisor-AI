@@ -14,6 +14,18 @@
         <result property="createdAt" column="created_at"/>
     </resultMap>
 
+    <resultMap id="ReviewTimelineResultMap" type="com.km.admin.review.vo.ReviewTimelineVO">
+        <id property="id" column="id"/>
+        <result property="docId" column="doc_id"/>
+        <result property="chunkId" column="chunk_id"/>
+        <result property="action" column="action"/>
+        <result property="comment" column="comment"/>
+        <result property="operatorUserId" column="operator_user_id"/>
+        <result property="operatorName" column="operator_name"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="source" column="source"/>
+    </resultMap>
+
     <select id="selectById" resultMap="ReviewRecordResultMap">
         select id,
                doc_id,
@@ -37,6 +49,43 @@
         from km_review_record
         where doc_id = #{docId}
         order by created_at desc
+    </select>
+
+    <select id="selectTimelineByDocId" resultMap="ReviewTimelineResultMap">
+        select *
+        from (
+            select id,
+                   doc_id,
+                   null as chunk_id,
+                   action,
+                   comment,
+                   operator_user_id,
+                   operator_name,
+                   created_at,
+                   'REVIEW' as source
+            from km_review_record
+            where doc_id = #{docId}
+            union all
+            select l.id,
+                   c.doc_id,
+                   l.chunk_id,
+                   l.action,
+                   case
+                       when l.action = 'EDIT' then concat('编辑切片 #', l.chunk_id)
+                       when l.action = 'SPLIT' then concat('拆分切片 #', l.chunk_id)
+                       when l.action = 'MERGE' then concat('合并切片 #', l.chunk_id, ' 与下一切片')
+                       when l.action = 'DELETE' then concat('删除切片 #', l.chunk_id)
+                       else concat('切片操作 #', l.chunk_id)
+                   end as comment,
+                   l.operator_user_id,
+                   l.operator_name,
+                   l.created_at,
+                   'CHUNK' as source
+            from km_chunk_edit_log l
+            join km_document_chunk c on c.id = l.chunk_id
+            where c.doc_id = #{docId}
+        ) timeline
+        order by created_at desc, id desc
     </select>
 
     <select id="selectLatestByDocId" resultMap="ReviewRecordResultMap">

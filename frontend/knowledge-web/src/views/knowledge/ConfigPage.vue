@@ -2,17 +2,50 @@
   <main class="config-page">
     <header class="page-header">
       <div>
-        <p class="eyebrow">知识管理</p>
-        <h1>系统配置</h1>
+        <p class="eyebrow">MODEL CONTROL CENTER</p>
+        <h1>
+          系统配置
+          <el-tooltip content="统一控制 Embedding、Rerank、Parser/OCR 与 Worker 运行参数。" placement="right">
+            <span class="km-info-dot">?</span>
+          </el-tooltip>
+        </h1>
+        <p class="subtitle">嵌入模型、重排序模型与解析 Worker 参数统一调优，保存后即时生效。</p>
+        <div class="km-chip-row config-hero-chips">
+          <span class="km-capability-chip">即时生效</span>
+          <span class="km-capability-chip">无需重启</span>
+          <span class="km-capability-chip">连接可测试</span>
+          <span class="km-capability-chip">运行时控制</span>
+        </div>
       </div>
       <el-button :loading="loading" @click="loadAllConfigs">刷新</el-button>
     </header>
+
+    <section class="config-summary">
+      <div class="summary-card">
+        <strong>Embedding</strong>
+        <span>{{ embeddingForm.model }} · {{ embeddingForm.dimension }} 维</span>
+      </div>
+      <div class="summary-card">
+        <strong>Rerank</strong>
+        <span>{{ rerankForm.model }} · Top {{ rerankForm.topN }}</span>
+      </div>
+      <div class="summary-card">
+        <strong>Parser / OCR</strong>
+        <span>{{ parserForm.paddleocrEnabled ? 'OCR 已启用' : 'OCR 未启用' }} · {{ parserForm.maxConcurrentTasks }} 并发</span>
+      </div>
+    </section>
 
     <section class="config-grid">
       <el-card class="config-card" shadow="never">
         <template #header>
           <div class="card-header">
-            <span>嵌入模型配置</span>
+            <span>
+              嵌入模型配置
+              <el-tooltip content="控制文档向量化使用的模型、API 与向量维度。" placement="top">
+                <span class="km-info-dot">?</span>
+              </el-tooltip>
+            </span>
+            <el-tag size="small" type="success" effect="plain">即时生效</el-tag>
           </div>
         </template>
 
@@ -43,7 +76,13 @@
       <el-card class="config-card" shadow="never">
         <template #header>
           <div class="card-header">
-            <span>重排序模型配置</span>
+            <span>
+              重排序模型配置
+              <el-tooltip content="控制向量召回后的精排模型与阈值。" placement="top">
+                <span class="km-info-dot">?</span>
+              </el-tooltip>
+            </span>
+            <el-tag size="small" type="warning" effect="plain">精度增强</el-tag>
           </div>
         </template>
 
@@ -78,7 +117,13 @@
       <el-card class="config-card parser-card" shadow="never">
         <template #header>
           <div class="card-header">
-            <span>解析器 / OCR / Worker 配置</span>
+            <span>
+              解析器 / OCR / Worker 配置
+              <el-tooltip content="控制文档解析、OCR 开关、并发、重试与超时策略。" placement="top">
+                <span class="km-info-dot">?</span>
+              </el-tooltip>
+            </span>
+            <el-tag size="small" type="info" effect="plain">热加载</el-tag>
           </div>
         </template>
 
@@ -292,9 +337,9 @@ onMounted(loadAllConfigs)
 
 <style scoped>
 .config-page {
-  min-height: 100vh;
-  padding: 32px;
-  background: #eef2f7;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
 
 .page-header {
@@ -302,35 +347,86 @@ onMounted(loadAllConfigs)
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  max-width: 1180px;
-  margin: 0 auto 24px;
+  padding: 28px;
+  border: 1px solid var(--km-border-light);
+  border-radius: var(--km-radius-xl);
+  background:
+    linear-gradient(135deg, rgba(79, 214, 154, 0.16), rgba(255, 255, 255, 0.04) 46%, rgba(244, 184, 96, 0.07)),
+    rgba(12, 22, 19, 0.72);
+  box-shadow: var(--km-shadow-card);
 }
 
 .eyebrow {
-  margin: 0 0 4px;
-  color: #64748b;
-  font-size: 14px;
+  margin: 0 0 8px;
+  color: var(--km-green-strong);
+  font-family: "SF Mono", "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 720;
 }
 
 h1 {
   margin: 0;
-  color: #111827;
-  font-size: 28px;
-  font-weight: 650;
+  color: var(--km-ink);
+  font-size: clamp(30px, 4vw, 40px);
+  font-weight: 720;
   letter-spacing: 0;
+}
+
+.subtitle {
+  max-width: 680px;
+  margin: 10px 0 0;
+  color: var(--km-muted);
+}
+
+.config-hero-chips {
+  margin-top: 18px;
+}
+
+.config-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.summary-card {
+  padding: 16px;
+  border: 1px solid var(--km-border-light);
+  border-radius: var(--km-radius-lg);
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: var(--km-shadow-soft);
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.summary-card:hover {
+  border-color: rgba(114, 239, 182, 0.3);
+  background: rgba(79, 214, 154, 0.07);
+  transform: translateY(-2px);
+}
+
+.summary-card strong {
+  display: block;
+  color: var(--km-green-strong);
+  font-family: "SF Mono", "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+}
+
+.summary-card span {
+  display: block;
+  margin-top: 8px;
+  color: var(--km-text);
 }
 
 .config-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
-  max-width: 1180px;
-  margin: 0 auto;
 }
 
 .config-card {
-  border-radius: 8px;
-  border-color: #dbe3ee;
+  border-radius: var(--km-radius-xl);
   text-align: left;
 }
 
@@ -347,8 +443,13 @@ h1 {
 }
 
 .card-header {
-  color: #1f2937;
+  color: var(--km-ink);
   font-weight: 650;
+}
+
+.card-header span {
+  display: inline-flex;
+  align-items: center;
 }
 
 .actions {
@@ -362,7 +463,7 @@ h1 {
 
 @media (max-width: 860px) {
   .config-page {
-    padding: 20px;
+    padding: 0;
   }
 
   .page-header {
@@ -371,6 +472,10 @@ h1 {
   }
 
   .config-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .config-summary {
     grid-template-columns: 1fr;
   }
 }

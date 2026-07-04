@@ -1,6 +1,5 @@
 package com.km.admin.knowledgebase.dto;
 
-import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
 
@@ -13,7 +12,6 @@ import javax.validation.constraints.Size;
  */
 public class UpdateKnowledgeBaseRequest {
 
-    @NotNull(message = "知识库 ID 不能为空")
     private Long id;
 
     @Size(max = 128)

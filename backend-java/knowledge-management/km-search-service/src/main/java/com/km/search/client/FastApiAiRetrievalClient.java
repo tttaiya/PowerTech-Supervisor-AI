@@ -13,6 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
@@ -54,6 +55,10 @@ public class FastApiAiRetrievalClient implements AiRetrievalClient {
             return objectMapper.convertValue(data, AiRetrievalResponse.class);
         } catch (BusinessException ex) {
             throw ex;
+        } catch (HttpStatusCodeException ex) {
+            throw new BusinessException(
+                    ErrorCode.AI_SERVICE_ERROR,
+                    "调用 AI 检索服务失败：" + extractErrorMessage(ex.getResponseBodyAsString(), ex.getMessage()));
         } catch (IllegalArgumentException | RestClientException ex) {
             throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, "调用 AI 检索服务失败：" + ex.getMessage());
         }
@@ -68,6 +73,27 @@ public class FastApiAiRetrievalClient implements AiRetrievalClient {
             return body.get("data");
         }
         return body;
+    }
+
+    private String extractErrorMessage(String responseBody, String fallback) {
+        if (StringUtils.hasText(responseBody)) {
+            try {
+                JsonNode errorBody = objectMapper.readTree(responseBody);
+                if (errorBody.has("detail")) {
+                    return errorBody.get("detail").asText();
+                }
+                if (errorBody.has("message")) {
+                    return errorBody.get("message").asText();
+                }
+                if (errorBody.has("error")) {
+                    return errorBody.get("error").asText();
+                }
+            } catch (Exception ignored) {
+                return responseBody;
+            }
+            return responseBody;
+        }
+        return fallback;
     }
 
     private String buildUrl() {

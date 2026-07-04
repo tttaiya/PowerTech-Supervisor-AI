@@ -211,6 +211,44 @@ def test_rag_vector_results_require_query_term_overlap():
     assert chunks == []
 
 
+def test_vector_search_extracts_knowledge_management_page_records():
+    from app.services.vector_search_service import VectorSearchService
+
+    service = VectorSearchService()
+    body = {
+        "code": 200,
+        "message": "success",
+        "data": {
+            "records": [
+                {
+                    "chunkId": "chunk-1",
+                    "documentId": "doc-1",
+                    "knowledgeBaseId": "kb-1",
+                    "knowledgeBaseName": "标准知识库",
+                    "documentName": "GB-T1094.7-2021 变压器加载导则.md",
+                    "sectionPath": "4 分类",
+                    "contentPreview": "变压器可分为配电变压器、电力变压器和特种变压器。",
+                    "vectorScore": 0.86,
+                }
+            ],
+            "total": 1,
+        },
+    }
+
+    rows = service._extract_rows(body)
+    result = service._to_search_result(rows[0])
+
+    assert len(rows) == 1
+    assert result.id == "chunk-1"
+    assert result.content == "变压器可分为配电变压器、电力变压器和特种变压器。"
+    assert result.score == 0.86
+    assert result.metadata["document_id"] == "doc-1"
+    assert result.metadata["knowledge_base_id"] == "kb-1"
+    assert result.metadata["knowledge_base_name"] == "标准知识库"
+    assert result.metadata["file_name"] == "GB-T1094.7-2021 变压器加载导则.md"
+    assert result.metadata["section_path"] == "4 分类"
+
+
 def test_upload_document_calls_vector_index_and_persists_vector_ids(monkeypatch):
     import asyncio
 
@@ -464,6 +502,68 @@ def test_rag_filters_soft_deleted_vector_hits():
         chunks = asyncio.run(service.retrieve("绝缘杆用于什么场景", [kb.id]))
 
         assert chunks == []
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_rag_db_fallback_matches_standard_code_in_filename_and_section():
+    import asyncio
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.db.base import Base
+    from app.models.orm.knowledge import KnowledgeBase, KnowledgeChunk, KnowledgeDocument
+    from app.models.orm.user import User
+    from app.services.rag_pipeline_service import RagPipelineService
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    SessionLocal = sessionmaker(bind=engine)
+    db = SessionLocal()
+    try:
+        user = User(username="standard-user", password_hash="hash", display_name="standard-user")
+        db.add(user)
+        db.flush()
+        kb = KnowledgeBase(name="标准知识库", code="standard-db", created_by=user.id)
+        db.add(kb)
+        db.flush()
+        doc = KnowledgeDocument(
+            knowledge_base_id=kb.id,
+            filename="GB-T1094.7-2021 变压器加载导则.md",
+            file_path="GB-T1094.7-2021.md",
+            file_ext="md",
+            status="indexed",
+            uploaded_by=user.id,
+        )
+        db.add(doc)
+        db.flush()
+        db.add(
+            KnowledgeChunk(
+                knowledge_base_id=kb.id,
+                document_id=doc.id,
+                section_path="4 分类",
+                content="变压器可分为配电变压器、电力变压器和特种变压器。",
+                chunk_index=0,
+            )
+        )
+        db.commit()
+
+        service = RagPipelineService(db=db, vector_search=lambda question, top_k, kb_ids: [])
+        service._setting = lambda key, default: {
+            "rag.vector_top_k": 3,
+            "rag.vector_score_threshold": 0.0,
+            "rag.retrieval_mode": "vector",
+            "rag.require_keyword_overlap": False,
+        }.get(key, default)
+
+        chunks = asyncio.run(service.retrieve("按GB/T1094.7，变压器可分为哪三类？", [kb.id]))
+
+        assert len(chunks) == 1
+        assert chunks[0].document_name == "GB-T1094.7-2021 变压器加载导则.md"
+        assert chunks[0].section_path == "4 分类"
+        assert chunks[0].metadata["retrieval_source"] == "db_fallback"
     finally:
         db.close()
         engine.dispose()

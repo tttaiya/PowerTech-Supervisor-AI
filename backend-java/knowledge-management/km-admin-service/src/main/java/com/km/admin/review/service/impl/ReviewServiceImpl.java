@@ -158,10 +158,10 @@ public class ReviewServiceImpl implements ReviewService {
                                         ApproveReviewRequest request,
                                         String operatorUserId, String operatorName) {
         Long chunkCount = jdbcTemplate.queryForObject(
-                "select count(1) from km_document_chunk where doc_id=? and version_no=?",
+                "select count(1) from km_document_chunk where doc_id=? and version_no=? and coalesce(vector_status, '') != 'DELETED'",
                 Long.class, docId, candidateVersion);
         Long notReadyChunks = jdbcTemplate.queryForObject(
-                "select count(1) from km_document_chunk where doc_id=? and version_no=? and coalesce(vector_status, '') != 'READY'",
+                "select count(1) from km_document_chunk where doc_id=? and version_no=? and coalesce(vector_status, '') not in ('READY','DELETED')",
                 Long.class, docId, candidateVersion);
         if (chunkCount == null || chunkCount <= 0 || (notReadyChunks != null && notReadyChunks > 0)) {
             return -4;
@@ -176,7 +176,7 @@ public class ReviewServiceImpl implements ReviewService {
         Long previousVersion = currentVersions.get(0);
         jdbcTemplate.update("update km_document_chunk set is_active=0 where doc_id=? and version_no=?",
                 docId, previousVersion);
-        jdbcTemplate.update("update km_document_chunk set is_active=1 where doc_id=? and version_no=?",
+        jdbcTemplate.update("update km_document_chunk set is_active=1 where doc_id=? and version_no=? and coalesce(vector_status, '') != 'DELETED'",
                 docId, candidateVersion);
         jdbcTemplate.update("update km_document_version set version_status='RETIRED' where doc_id=? and version_status='ACTIVE'",
                 docId);

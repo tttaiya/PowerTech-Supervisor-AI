@@ -72,12 +72,7 @@ class RagPipelineService:
         if self._setting("rag.require_keyword_overlap", False):
             chunks = [chunk for chunk in chunks if self._has_query_term_overlap(question, chunk.content)]
         chunks = [chunk for chunk in chunks if chunk.normalized_score >= threshold]
-        if (
-            not chunks
-            and self.db is not None
-            and raw_chunks
-            and any(chunk.metadata.get("retrieval_source") != "db_fallback" for chunk in raw_chunks)
-        ):
+        if not chunks and self.db is not None:
             chunks = self._db_chunk_search(question, top_k, knowledge_base_ids)
         if self._setting("rag.retrieval_mode", "vector") == "vector_rerank" and self.reranker and chunks:
             results = await self.reranker.rerank(question, chunks)
@@ -215,8 +210,9 @@ class RagPipelineService:
         terms = self._extract_query_terms(question)
         chunks = []
         for chunk, document, kb in self.db.execute(stmt).all():
-            content_lower = chunk.content.lower()
-            hits = sum(1 for term in terms if term in content_lower)
+            searchable_text = self._build_searchable_chunk_text(document.filename, chunk.section_path, chunk.content)
+            normalized_text = self._normalize_match_text(searchable_text)
+            hits = sum(1 for term in terms if self._term_matches_text(term, searchable_text, normalized_text))
             if terms and hits == 0:
                 continue
             normalized_score = hits / max(1, len(terms)) if terms else 0.5
@@ -236,6 +232,26 @@ class RagPipelineService:
             )
         chunks.sort(key=lambda item: item.normalized_score, reverse=True)
         return self._limit_per_knowledge_base(chunks, top_k, knowledge_base_ids)
+
+    def _build_searchable_chunk_text(self, document_name: str | None, section_path: str | None, content: str | None) -> str:
+        return " ".join(
+            part.strip().lower()
+            for part in (document_name, section_path, content)
+            if isinstance(part, str) and part.strip()
+        )
+
+    def _normalize_match_text(self, value: str) -> str:
+        if not value:
+            return ""
+        return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", value.lower())
+
+    def _term_matches_text(self, term: str, searchable_text: str, normalized_text: str) -> bool:
+        if not term:
+            return False
+        normalized_term = self._normalize_match_text(term)
+        if term in searchable_text:
+            return True
+        return bool(normalized_term) and normalized_term in normalized_text
 
     def _validate_chunks_against_db(self, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
         if self.db is None or not chunks:

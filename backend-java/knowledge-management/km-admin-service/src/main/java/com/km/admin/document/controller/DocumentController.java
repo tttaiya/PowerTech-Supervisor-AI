@@ -6,6 +6,7 @@ import com.km.admin.document.dto.TagUpdateRequest;
 import com.km.admin.document.entity.KmDocument;
 import com.km.admin.document.service.DocumentService;
 import com.km.admin.document.service.RecycleBinService;
+import com.km.admin.document.vo.DocumentChunkVO;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -87,6 +88,23 @@ public class DocumentController {
         return ApiResponse.success(documentService.listDocumentTasks(id));
     }
 
+    @PostMapping("/documents/{id}/retry")
+    public ApiResponse<Map<String, Object>> retryDocument(
+            @PathVariable Long id,
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        String effectiveUserId = (userId == null || userId.isEmpty()) ? "anonymous" : userId;
+        return ApiResponse.success(documentService.retryDocument(id, effectiveUserId));
+    }
+
+    @GetMapping("/documents/{id}/chunks")
+    public ApiResponse<PageResult<DocumentChunkVO>> listDocumentChunks(
+            @PathVariable Long id,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        return ApiResponse.success(documentService.listDocumentChunks(id, keyword, page, pageSize));
+    }
+
     @PutMapping("/documents/{id}/tags")
     public ApiResponse<Void> updateTags(@PathVariable Long id, @RequestBody TagUpdateRequest body) {
         List<String> tags = body.getTags() == null ? java.util.Collections.<String>emptyList() : body.getTags();
@@ -95,14 +113,18 @@ public class DocumentController {
     }
 
     @DeleteMapping("/documents/{id}")
-    public ApiResponse<Void> deleteDocument(@PathVariable Long id) {
-        documentService.deleteDocument(id);
+    public ApiResponse<Void> deleteDocument(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "false") boolean confirmProcessing) {
+        documentService.deleteDocument(id, confirmProcessing);
         return ApiResponse.success(null);
     }
 
     @PostMapping("/documents/batch-delete")
-    public ApiResponse<Void> batchDelete(@RequestBody List<Long> ids) {
-        documentService.batchDeleteDocuments(ids);
+    public ApiResponse<Void> batchDelete(
+            @RequestBody List<Long> ids,
+            @RequestParam(defaultValue = "false") boolean confirmProcessing) {
+        documentService.batchDeleteDocuments(ids, confirmProcessing);
         return ApiResponse.success(null);
     }
 

@@ -9,6 +9,9 @@
           <div class="source-line">
             <span>{{ result.kbName || fallbackKbName }}</span>
             <span v-if="result.chapterPath">{{ result.chapterPath }}</span>
+            <span>页码 {{ result.pageNo ?? '-' }}</span>
+            <span>docId {{ result.docId ?? '-' }}</span>
+            <span>chunkId {{ result.chunkId ?? '-' }}</span>
           </div>
         </div>
 
@@ -33,6 +36,13 @@
         </el-tag>
       </div>
 
+      <div class="meta-grid">
+        <span v-if="result.docId">docId: {{ result.docId }}</span>
+        <span v-if="result.chunkId">chunkId: {{ result.chunkId }}</span>
+        <span v-if="result.pageNo">页码: {{ result.pageNo }}</span>
+        <span v-if="result.vectorId">vectorId: {{ result.vectorId }}</span>
+      </div>
+
       <p class="content" :class="{ collapsed: shouldCollapse && !expanded }">
         {{ contentText }}
       </p>
@@ -55,7 +65,7 @@ const props = defineProps<{
 
 const expanded = ref(false)
 
-const contentText = computed(() => props.result.content?.trim() || '暂无命中正文')
+const contentText = computed(() => props.result.content?.trim() || props.result.summary?.trim() || '暂无命中正文')
 const shouldCollapse = computed(() => contentText.value.length > 360)
 const visibleTags = computed(() => (props.result.tags || []).filter(Boolean))
 const fallbackKbName = computed(() => (props.result.kbId ? `知识库 ${props.result.kbId}` : '未知知识库'))
@@ -76,10 +86,50 @@ function formatScore(value?: number | null) {
   grid-template-columns: 48px minmax(0, 1fr);
   gap: 14px;
   padding: 18px;
-  border: 1px solid rgba(217, 217, 221, 0.84);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid var(--km-border-light);
+  border-radius: var(--km-radius-lg);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.025)),
+    rgba(13, 24, 20, 0.72);
   box-shadow: var(--km-shadow-soft);
+  backdrop-filter: blur(14px);
+  transition:
+    transform 180ms var(--km-ease-out),
+    border-color 180ms var(--km-ease-out),
+    box-shadow 180ms var(--km-ease-out);
+}
+
+.retrieval-card::after {
+  position: absolute;
+  right: 18px;
+  bottom: 14px;
+  left: 80px;
+  height: 2px;
+  border-radius: 999px;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgba(114, 239, 182, 0.66), rgba(113, 215, 255, 0.44), transparent);
+  background-size: 180% 100%;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.retrieval-card:hover {
+  border-color: rgba(114, 239, 182, 0.34);
+  box-shadow: var(--km-shadow-card), 0 0 38px rgba(79, 214, 154, 0.12);
+  transform: translateY(-2px);
+}
+
+.retrieval-card:hover::after {
+  opacity: 1;
+  animation: km-pulse-line 1.5s linear infinite;
+}
+
+.retrieval-card:hover .score-pill {
+  box-shadow: 0 0 18px rgba(114, 239, 182, 0.22);
+}
+
+.retrieval-card:hover .title-group h3 {
+  color: var(--km-green-strong);
 }
 
 .rank-badge {
@@ -88,10 +138,10 @@ function formatScore(value?: number | null) {
   justify-content: center;
   width: 42px;
   height: 42px;
-  border: 1px solid rgba(0, 60, 51, 0.1);
+  border: 1px solid rgba(114, 239, 182, 0.28);
   border-radius: 14px;
-  color: var(--km-green);
-  background: rgba(237, 252, 233, 0.72);
+  color: var(--km-green-strong);
+  background: rgba(79, 214, 154, 0.12);
   font-weight: 720;
 }
 
@@ -151,16 +201,16 @@ function formatScore(value?: number | null) {
   min-height: 28px;
   padding: 4px 10px;
   border-radius: 999px;
-  color: var(--km-green);
-  background: rgba(237, 252, 233, 0.72);
+  color: var(--km-green-strong);
+  background: rgba(79, 214, 154, 0.12);
   font-size: 12px;
   font-weight: 640;
   white-space: nowrap;
 }
 
 .score-pill.rerank {
-  color: #8a3d2d;
-  background: rgba(255, 119, 89, 0.12);
+  color: #ffd08a;
+  background: rgba(244, 184, 96, 0.12);
 }
 
 .tag-row {
@@ -171,19 +221,49 @@ function formatScore(value?: number | null) {
 }
 
 .result-tag {
-  border-color: rgba(0, 60, 51, 0.14);
-  color: var(--km-green);
-  background: rgba(255, 255, 255, 0.68);
+  border-color: rgba(114, 239, 182, 0.22);
+  color: var(--km-green-strong);
+  background: rgba(255, 255, 255, 0.05);
   font-weight: 560;
+}
+
+.meta-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.meta-grid span {
+  display: inline-flex;
+  padding: 4px 9px;
+  border: 1px solid var(--km-border-light);
+  border-radius: 999px;
+  color: var(--km-muted);
+  background: rgba(255, 255, 255, 0.035);
+  font-family: "SF Mono", "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
 }
 
 .content {
   margin: 14px 0 0;
+  padding: 12px;
+  border: 1px solid rgba(193, 227, 212, 0.08);
+  border-radius: 14px;
   color: var(--km-text);
+  background: rgba(0, 0, 0, 0.12);
   font-size: 14px;
   line-height: 1.72;
   white-space: pre-wrap;
   word-break: break-word;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.retrieval-card:hover .content {
+  border-color: rgba(114, 239, 182, 0.24);
+  box-shadow: inset 0 0 18px rgba(79, 214, 154, 0.055);
 }
 
 .content.collapsed {

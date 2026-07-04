@@ -21,6 +21,9 @@
         <result property="kbName" column="kb_name"/>
         <result property="originalName" column="original_name"/>
         <result property="status" column="status"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="currentVersionNo" column="current_version_no"/>
         <result property="chunkCount" column="chunk_count"/>
     </resultMap>
 
@@ -69,9 +72,13 @@
                kb.name as kb_name,
                d.file_name as original_name,
                case when pv.version_no is not null then 'PENDING_REVIEW' else d.document_status end as status,
+               d.created_at,
+               d.updated_at,
+               coalesce(pv.version_no, d.current_version_no) as current_version_no,
                (select count(1)
                   from km_document_chunk c
                  where c.doc_id = d.id
+                   and coalesce(c.vector_status, '') != 'DELETED'
                    and (c.is_active = 1 or c.version_no = pv.version_no)) as chunk_count
         from km_document d
         left join km_knowledge_base kb on d.kb_id = kb.id

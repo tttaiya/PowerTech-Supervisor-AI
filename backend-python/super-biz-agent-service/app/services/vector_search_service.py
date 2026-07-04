@@ -78,40 +78,69 @@ class VectorSearchService:
             raise RuntimeError(f"搜索失败: {e}") from e
 
     def _extract_rows(self, body: Any) -> list[dict[str, Any]]:
-        if isinstance(body, list):
-            return [item for item in body if isinstance(item, dict)]
-        if isinstance(body, dict):
-            for key in ("results", "data", "items"):
-                rows = body.get(key)
-                if isinstance(rows, list):
-                    return [item for item in rows if isinstance(item, dict)]
+        rows = self._find_rows(body)
+        if rows:
+            return [item for item in rows if isinstance(item, dict)]
+        return []
+
+    def _find_rows(self, value: Any) -> list[Any]:
+        if isinstance(value, list):
+            return value
+        if not isinstance(value, dict):
+            return []
+
+        for key in ("records", "results", "items", "rows", "list"):
+            rows = value.get(key)
+            if isinstance(rows, list):
+                return rows
+
+        for key in ("data", "result", "payload"):
+            nested = value.get(key)
+            rows = self._find_rows(nested)
+            if rows:
+                return rows
+
         return []
 
     def _to_search_result(self, row: dict[str, Any]) -> SearchResult:
         metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
-        chunk_id = row.get("chunk_id") or row.get("id") or metadata.get("chunk_id") or metadata.get("id")
-        score = self._float(row.get("score"), self._float(row.get("normalized_score"), 1.0))
-        normalized_score = self._float(row.get("normalized_score"), score)
-        raw_score = self._float(row.get("raw_score"), score)
+        chunk_id = self._first(row, metadata, "chunk_id", "chunkId", "id")
+        score = self._float(
+            self._first(row, metadata, "score", "normalized_score", "normalizedScore", "similarity", "vector_score", "vectorScore"),
+            1.0,
+        )
+        normalized_score = self._float(
+            self._first(row, metadata, "normalized_score", "normalizedScore", "vector_score", "vectorScore", "similarity", "score"),
+            score,
+        )
+        raw_score = self._float(self._first(row, metadata, "raw_score", "rawScore", "distance", "score"), score)
         merged_metadata = {
             **metadata,
-            "id": row.get("id") or chunk_id,
+            "id": self._first(row, metadata, "id", "chunk_id", "chunkId"),
             "chunk_id": chunk_id,
-            "document_id": row.get("document_id") or metadata.get("document_id"),
-            "knowledge_base_id": row.get("knowledge_base_id") or metadata.get("knowledge_base_id"),
-            "knowledge_base_name": row.get("knowledge_base_name") or metadata.get("knowledge_base_name"),
-            "file_name": row.get("document_name") or row.get("file_name") or metadata.get("file_name"),
-            "section_path": row.get("section_path") or metadata.get("section_path"),
+            "document_id": self._first(row, metadata, "document_id", "documentId"),
+            "knowledge_base_id": self._first(row, metadata, "knowledge_base_id", "knowledgeBaseId"),
+            "knowledge_base_name": self._first(row, metadata, "knowledge_base_name", "knowledgeBaseName"),
+            "file_name": self._first(row, metadata, "document_name", "documentName", "file_name", "fileName", "filename"),
+            "section_path": self._first(row, metadata, "section_path", "sectionPath"),
             "raw_score": raw_score,
             "normalized_score": normalized_score,
             "retrieval_source": "knowledge_management",
         }
         return SearchResult(
-            id=str(chunk_id),
-            content=str(row.get("content") or row.get("page_content") or ""),
+            id=str(chunk_id or merged_metadata["id"] or ""),
+            content=str(self._first(row, metadata, "content", "page_content", "pageContent", "content_preview", "contentPreview", "text") or ""),
             score=score,
             metadata=merged_metadata,
         )
+
+    def _first(self, row: dict[str, Any], metadata: dict[str, Any], *keys: str) -> Any:
+        for source in (row, metadata):
+            for key in keys:
+                value = source.get(key)
+                if value is not None and value != "":
+                    return value
+        return None
 
     def _float(self, value: Any, default: float) -> float:
         try:

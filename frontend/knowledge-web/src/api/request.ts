@@ -1,5 +1,6 @@
 import axios, { AxiosHeaders } from 'axios'
 import type { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
+import { friendlyErrorMessage } from '@/utils/error'
 
 /**
  * 知识管理前端统一 Axios 封装。
@@ -43,6 +44,7 @@ request.interceptors.response.use(
         window.location.href = '/'
       }
     }
+    error.message = friendlyErrorMessage(error, '请求失败，请稍后重试')
     return Promise.reject(error)
   },
 )

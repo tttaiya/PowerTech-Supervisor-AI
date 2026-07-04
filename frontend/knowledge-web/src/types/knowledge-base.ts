@@ -10,10 +10,10 @@
  */
 
 export const KB_CATEGORIES = [
-  { value: 'REGULATION', label: '规章制度' },
-  { value: 'REPORT_PAPER', label: '报告/论文' },
-  { value: 'TERM', label: '术语词条' },
-  { value: 'GENERAL', label: '通用' },
+  { value: 'REGULATION', label: '规程规范' },
+  { value: 'REPORT_PAPER', label: '技术报告论文' },
+  { value: 'TERM', label: '术语条目' },
+  { value: 'GENERAL', label: '通用文档' },
 ] as const
 
 export const KB_RETRIEVAL_STRATEGIES = [

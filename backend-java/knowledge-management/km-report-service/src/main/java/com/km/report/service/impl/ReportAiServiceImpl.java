@@ -126,23 +126,182 @@ public class ReportAiServiceImpl implements ReportAiService {
 
     private void extractAiResult(Map<?, ?> responseBody, AiGenerateResponse result) {
         Object choicesObj = responseBody.get("choices");
-        if (choicesObj instanceof List && !((List<?>) choicesObj).isEmpty()) {
-            Object first = ((List<?>) choicesObj).get(0);
-            if (first instanceof Map) {
-                Map<?, ?> firstMap = (Map<?, ?>) first;
-                Object messageObj = firstMap.get("message");
-                if (messageObj instanceof Map) {
-                    Object contentObj = ((Map<?, ?>) messageObj).get("content");
-                    if (contentObj != null) {
-                        result.setContent(String.valueOf(contentObj));
-                    }
-                }
-                Object finishReason = firstMap.get("finish_reason");
+        if (!(choicesObj instanceof List)) {
+            String content = resolveResponseContent(responseBody);
+            if (hasText(content)) {
+                result.setContent(content.trim());
+            }
+            if (result.getFinishReason() == null) {
+                Object finishReason = responseBody.get("finish_reason");
                 if (finishReason != null) {
                     result.setFinishReason(String.valueOf(finishReason));
                 }
             }
+            return;
         }
+        for (Object choiceObj : (List<?>) choicesObj) {
+            if (!(choiceObj instanceof Map)) {
+                continue;
+            }
+            Map<?, ?> choice = (Map<?, ?>) choiceObj;
+            if (!hasText(result.getContent())) {
+                String content = resolveChoiceContent(choice);
+                if (hasText(content)) {
+                    result.setContent(content.trim());
+                }
+            }
+            if (result.getFinishReason() == null) {
+                Object finishReason = choice.get("finish_reason");
+                if (finishReason != null) {
+                    result.setFinishReason(String.valueOf(finishReason));
+                }
+            }
+            if (hasText(result.getContent()) && result.getFinishReason() != null) {
+                break;
+            }
+        }
+    }
+
+    private String resolveChoiceContent(Map<?, ?> choice) {
+        if (choice == null) {
+            return "";
+        }
+        String content = extractMessageContent(choice.get("message"));
+        if (hasText(content)) {
+            return content;
+        }
+        content = extractMessageContent(choice.get("delta"));
+        if (hasText(content)) {
+            return content;
+        }
+        content = extractFragments(choice.get("text"));
+        if (hasText(content)) {
+            return content;
+        }
+        return "";
+    }
+
+    private String resolveResponseContent(Map<?, ?> responseBody) {
+        if (responseBody == null) {
+            return "";
+        }
+        String content = extractMessageContent(responseBody.get("message"));
+        if (hasText(content)) {
+            return content;
+        }
+        content = extractMessageContent(responseBody.get("delta"));
+        if (hasText(content)) {
+            return content;
+        }
+        content = extractFragments(responseBody.get("text"));
+        if (hasText(content)) {
+            return content;
+        }
+        content = extractFragments(responseBody.get("content"));
+        if (hasText(content)) {
+            return content;
+        }
+        content = extractFragments(responseBody.get("output_text"));
+        if (hasText(content)) {
+            return content;
+        }
+        content = extractFragments(responseBody.get("data"));
+        if (hasText(content)) {
+            return content;
+        }
+        return "";
+    }
+
+    private String extractMessageContent(Object messageObj) {
+        if (messageObj instanceof Map) {
+            Map<?, ?> message = (Map<?, ?>) messageObj;
+            String content = extractFragments(message.get("content"));
+            if (hasText(content)) {
+                return content;
+            }
+            content = extractFragments(message.get("text"));
+            if (hasText(content)) {
+                return content;
+            }
+            content = extractFragments(message.get("message"));
+            if (hasText(content)) {
+                return content;
+            }
+        }
+        return extractFragments(messageObj);
+    }
+
+    private String extractFragments(Object node) {
+        if (node == null) {
+            return "";
+        }
+        if (node instanceof String) {
+            return sanitizeAiContent((String) node);
+        }
+        if (node instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) node;
+            String text = extractFragments(map.get("text"));
+            if (hasText(text)) {
+                return text;
+            }
+            text = extractFragments(map.get("value"));
+            if (hasText(text)) {
+                return text;
+            }
+            text = extractFragments(map.get("content"));
+            if (hasText(text)) {
+                return text;
+            }
+            return "";
+        }
+        if (node instanceof List) {
+            StringBuilder builder = new StringBuilder();
+            for (Object item : (List<?>) node) {
+                String fragment = extractFragments(item);
+                if (hasText(fragment)) {
+                    if (builder.length() > 0) {
+                        builder.append("\n\n");
+                    }
+                    builder.append(fragment);
+                }
+            }
+            return builder.toString();
+        }
+        return "";
+    }
+
+    private String sanitizeAiContent(String value) {
+        if (value == null) {
+            return "";
+        }
+        String sanitized = value.trim();
+        for (int i = 0; i < 3; i++) {
+            String unwrapped = unwrapFinishReasonWrapper(sanitized);
+            if (sanitized.equals(unwrapped)) {
+                break;
+            }
+            sanitized = unwrapped.trim();
+        }
+        return sanitized;
+    }
+
+    private String unwrapFinishReasonWrapper(String value) {
+        if (!hasText(value)) {
+            return "";
+        }
+        String normalized = value.trim();
+        if (!normalized.startsWith("{") || !normalized.endsWith("}")) {
+            return normalized;
+        }
+        int textIndex = normalized.indexOf("text=");
+        if (textIndex < 0) {
+            return normalized;
+        }
+        String content = normalized.substring(textIndex + 5, normalized.length() - 1).trim();
+        if (content.endsWith(", finish_reason=stop")) {
+            content = content.substring(0, content.length() - ", finish_reason=stop".length()).trim();
+        }
+        return content;
     }
 
     private void fillUsage(Map<?, ?> responseBody, AiGenerateResponse result) {

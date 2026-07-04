@@ -12,6 +12,7 @@ import com.km.admin.review.service.ChunkEditService;
 import com.km.admin.review.service.ReviewService;
 import com.km.admin.review.vo.PendingReviewDocumentVO;
 import com.km.admin.review.vo.ReviewDocumentDetailVO;
+import com.km.admin.review.vo.ReviewTimelineVO;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -102,8 +103,8 @@ public class ReviewController {
     }
 
     @GetMapping("/documents/{docId}/records")
-    public Result<List<ReviewRecord>> getReviewRecords(@PathVariable Long docId) {
-        return Result.success(reviewRecordMapper.selectByDocId(docId));
+    public Result<List<ReviewTimelineVO>> getReviewRecords(@PathVariable Long docId) {
+        return Result.success(reviewRecordMapper.selectTimelineByDocId(docId));
     }
 
     @PostMapping("/documents/{docId}/approve")

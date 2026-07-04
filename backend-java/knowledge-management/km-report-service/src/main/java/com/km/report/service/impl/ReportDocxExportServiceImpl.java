@@ -366,7 +366,32 @@ public class ReportDocxExportServiceImpl implements ReportDocxExportService {
         if (cleaned.endsWith("|")) {
             cleaned = cleaned.substring(0, cleaned.length() - 1);
         }
-        return cleaned.split("\\|");
+        List<String> cells = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean escaped = false;
+        for (int i = 0; i < cleaned.length(); i++) {
+            char ch = cleaned.charAt(i);
+            if (escaped) {
+                current.append(ch);
+                escaped = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (ch == '|') {
+                cells.add(current.toString());
+                current.setLength(0);
+                continue;
+            }
+            current.append(ch);
+        }
+        if (escaped) {
+            current.append('\\');
+        }
+        cells.add(current.toString());
+        return cells.toArray(new String[0]);
     }
 
     private boolean isMarkdownImage(String line) {

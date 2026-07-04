@@ -306,10 +306,14 @@ services:
       RABBITMQ_VHOST: /km
       RABBITMQ_USER: km
       RABBITMQ_PASSWORD: km123456
+      KM_AI_BASE_URL: http://fastapi-ai-service:8000
+      INTERNAL_TOKEN: demo-internal-token
     depends_on:
       mysql:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      fastapi-ai-service:
         condition: service_healthy
     ports:
       - "9103:9103"

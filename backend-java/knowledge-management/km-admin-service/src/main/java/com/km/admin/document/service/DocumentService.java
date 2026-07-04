@@ -6,6 +6,7 @@ import com.km.admin.document.entity.KmDocument;
 import com.km.admin.document.infrastructure.MinioClientAdapter;
 import com.km.admin.document.mapper.DocumentManageMapper;
 import com.km.admin.document.mapper.DocumentTagMapper;
+import com.km.admin.document.vo.DocumentChunkVO;
 import com.km.admin.knowledgebase.mapper.KnowledgeBaseMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -167,10 +168,10 @@ public class DocumentService {
 
     /**
      * R1：逻辑删除只改 is_deleted=1 + deleted_at，不动 document_status。
-     * 状态机检查：禁止删除 UPLOADED/PARSING/CHUNKING/VECTORIZING 状态的文档。
+     * 处理中状态允许删除，但调用方必须显式确认任务仍可能继续执行的风险。
      */
     @Transactional
-    public void deleteDocument(Long docId) {
+    public void deleteDocument(Long docId, boolean confirmProcessing) {
         KmDocument doc = documentMapper.selectById(docId);
         if (doc == null) {
             throw new IllegalArgumentException("文档不存在");
@@ -178,7 +179,7 @@ public class DocumentService {
         if (doc.getIsDeleted() != null && doc.getIsDeleted() == 1) {
             throw new IllegalStateException("文档已在回收站");
         }
-        rejectIfProcessing(doc.getStatus());
+        requireProcessingDeleteConfirmation(doc.getStatus(), confirmProcessing);
         LocalDateTime now = LocalDateTime.now();
         int affected = documentMapper.logicDelete(docId, now, recycleBinService.calculatePurgeAt(now));
         if (affected == 0) {
@@ -188,10 +189,10 @@ public class DocumentService {
     }
 
     /**
-     * 批量逻辑删除。R1：状态机检查同上。
+     * 批量逻辑删除。处理中状态允许删除，但调用方必须显式确认风险。
      */
     @Transactional
-    public void batchDeleteDocuments(List<Long> ids) {
+    public void batchDeleteDocuments(List<Long> ids, boolean confirmProcessing) {
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("请选择要删除的文档");
         }
@@ -204,7 +205,7 @@ public class DocumentService {
             if (doc.getIsDeleted() != null && doc.getIsDeleted() == 1) {
                 throw new IllegalStateException("文档「" + doc.getOriginalName() + "」已在回收站");
             }
-            rejectIfProcessing(doc.getStatus());
+            requireProcessingDeleteConfirmation(doc.getStatus(), confirmProcessing);
         }
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime purgeAt = recycleBinService.calculatePurgeAt(now);
@@ -239,6 +240,34 @@ public class DocumentService {
         return result;
     }
 
+    public PageResult<DocumentChunkVO> listDocumentChunks(Long docId, String keyword, int page, int pageSize) {
+        KmDocument doc = getDocument(docId);
+        if (!"READY".equals(doc.getStatus()) && !"PENDING_REVIEW".equals(doc.getStatus())) {
+            throw new IllegalStateException("仅 READY 或 PENDING_REVIEW 文档可查看切片详情");
+        }
+        int currentPage = Math.max(1, page);
+        int currentPageSize = Math.max(1, Math.min(100, pageSize));
+        int offset = (currentPage - 1) * currentPageSize;
+        List<DocumentChunkVO> records = documentMapper.selectChunksByDocId(
+                docId, keyword, offset, currentPageSize);
+        long total = documentMapper.countChunksByDocId(docId, keyword);
+        return new PageResult<DocumentChunkVO>(records, total, currentPage, currentPageSize);
+    }
+
+    public Map<String, Object> retryDocument(Long docId, String userId) {
+        KmDocument doc = getDocument(docId);
+        if (doc.getIsDeleted() != null && doc.getIsDeleted() == 1) {
+            throw new IllegalStateException("回收站文档不可重试");
+        }
+        if (!"FAILED".equals(doc.getStatus())) {
+            throw new IllegalStateException("仅失败文档可重试");
+        }
+        Long taskId = documentTaskFacade.createRetryTask(docId, userId);
+        Map<String, Object> payload = new LinkedHashMap<String, Object>();
+        payload.put("taskId", taskId);
+        return payload;
+    }
+
     /**
      * R8：物理删除入口当前关闭（Worker MinIO 删除还没补完）。
      * 保留方法签名 + 抛异常，前端永久删除按钮在 v4 阶段隐藏。
@@ -247,14 +276,17 @@ public class DocumentService {
         throw new UnsupportedOperationException("物理删除功能暂未开放，等 Worker 端 MinIO 删除链路就绪后再启用");
     }
 
-    private void rejectIfProcessing(String status) {
-        if (status == null) return;
-        if ("UPLOADED".equals(status)
+    private void requireProcessingDeleteConfirmation(String status, boolean confirmed) {
+        if (!confirmed && isProcessingStatus(status)) {
+            throw new IllegalStateException("处理中的文档删除前需要确认风险（状态：" + status + "）");
+        }
+    }
+
+    private boolean isProcessingStatus(String status) {
+        return "UPLOADED".equals(status)
                 || "PARSING".equals(status)
                 || "CHUNKING".equals(status)
-                || "VECTORIZING".equals(status)) {
-            throw new IllegalStateException("处理中的文档不允许删除（状态：" + status + "）");
-        }
+                || "VECTORIZING".equals(status);
     }
 
     private void validateBatch(MultipartFile[] files) {

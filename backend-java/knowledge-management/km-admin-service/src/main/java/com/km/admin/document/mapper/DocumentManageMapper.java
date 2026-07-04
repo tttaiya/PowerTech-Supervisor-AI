@@ -1,6 +1,7 @@
 package com.km.admin.document.mapper;
 
 import com.km.admin.document.entity.KmDocument;
+import com.km.admin.document.vo.DocumentChunkVO;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
@@ -48,6 +49,14 @@ public interface DocumentManageMapper {
     java.util.Map<String, Object> selectLatestTaskByDocId(@Param("docId") Long docId);
 
     List<java.util.Map<String, Object>> selectTasksByDocId(@Param("docId") Long docId);
+
+    List<DocumentChunkVO> selectChunksByDocId(@Param("docId") Long docId,
+                                              @Param("keyword") String keyword,
+                                              @Param("offset") int offset,
+                                              @Param("pageSize") int pageSize);
+
+    long countChunksByDocId(@Param("docId") Long docId,
+                            @Param("keyword") String keyword);
 
     int updateUploaderSnapshot(@Param("id") Long id,
                                @Param("uploaderUserId") String uploaderUserId,

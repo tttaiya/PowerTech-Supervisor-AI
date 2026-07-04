@@ -21,6 +21,8 @@ export interface RetrievalSearchRecord {
   kbId?: number | string | null
   kbName?: string | null
   chapterPath?: string | null
+  pageNo?: number | string | null
+  summary?: string | null
   content?: string | null
   similarityScore?: number | null
   rerankScore?: number | null

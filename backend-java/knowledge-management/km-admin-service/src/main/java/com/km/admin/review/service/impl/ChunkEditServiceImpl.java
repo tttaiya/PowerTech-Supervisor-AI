@@ -163,10 +163,12 @@ public class ChunkEditServiceImpl implements ChunkEditService {
         if (updated <= 0) {
             return 0;
         }
-        jdbcTemplate.update("delete from km_document_chunk where id=?", toLong(getMapValue(next, "chunkId")));
+        jdbcTemplate.update(
+                "update km_document_chunk set is_active=0, vector_status='DELETED', updated_at=now() where id=?",
+                toLong(getMapValue(next, "chunkId")));
         jdbcTemplate.update(
                 "update km_document_chunk set chunk_index=chunk_index-1, updated_at=now() " +
-                        "where doc_id=? and version_no=? and chunk_index>?",
+                        "where doc_id=? and version_no=? and coalesce(vector_status, '') != 'DELETED' and chunk_index>?",
                 docId, versionNo, nextIndex);
         insertEditLog(chunkId, beforeContent, mergedContent, "MERGE", operatorUserId, operatorName);
         reembedUpdatedChunk(chunkId, operatorUserId);
@@ -199,7 +201,7 @@ public class ChunkEditServiceImpl implements ChunkEditService {
         Integer chunkIndex = toInteger(getMapValue(chunk, "chunkIndex"));
         jdbcTemplate.update(
                 "update km_document_chunk set chunk_index=chunk_index+1, updated_at=now() " +
-                        "where doc_id=? and version_no=? and chunk_index>?",
+                        "where doc_id=? and version_no=? and coalesce(vector_status, '') != 'DELETED' and chunk_index>?",
                 docId, versionNo, chunkIndex);
         jdbcTemplate.update(
                 "update km_document_chunk set content=?, char_count=?, content_version=content_version+1, " +
@@ -226,19 +228,21 @@ public class ChunkEditServiceImpl implements ChunkEditService {
         Long versionNo = toLong(getMapValue(chunk, "versionNo"));
         Integer chunkIndex = toInteger(getMapValue(chunk, "chunkIndex"));
         Integer count = jdbcTemplate.queryForObject(
-                "select count(1) from km_document_chunk where doc_id=? and version_no=?",
+                "select count(1) from km_document_chunk where doc_id=? and version_no=? and coalesce(vector_status, '') != 'DELETED'",
                 Integer.class, docId, versionNo);
         if (count == null || count <= 1) {
             return -5;
         }
         String beforeContent = toStringValue(getMapValue(chunk, "content"));
-        int deleted = jdbcTemplate.update("delete from km_document_chunk where id=?", chunkId);
+        int deleted = jdbcTemplate.update(
+                "update km_document_chunk set is_active=0, vector_status='DELETED', updated_at=now() where id=?",
+                chunkId);
         if (deleted <= 0) {
             return 0;
         }
         jdbcTemplate.update(
                 "update km_document_chunk set chunk_index=chunk_index-1, updated_at=now() " +
-                        "where doc_id=? and version_no=? and chunk_index>?",
+                        "where doc_id=? and version_no=? and coalesce(vector_status, '') != 'DELETED' and chunk_index>?",
                 docId, versionNo, chunkIndex);
         insertEditLog(chunkId, beforeContent, "", "DELETE", operatorUserId, operatorName);
         return 1;
@@ -254,7 +258,8 @@ public class ChunkEditServiceImpl implements ChunkEditService {
                         "c.chapter_path as chapterPath, c.page_no as pageNo, c.chunk_type as chunkType, " +
                         "c.char_count as charCount, c.vector_id as vectorId, c.vector_status as vectorStatus " +
                         "from km_document_chunk c join km_document d on d.id=c.doc_id " +
-                        "where c.doc_id=? and c.version_no=? and c.chunk_index>? and d.is_deleted=0 " +
+                        "where c.doc_id=? and c.version_no=? and c.chunk_index>? " +
+                        "and coalesce(c.vector_status, '') != 'DELETED' and d.is_deleted=0 " +
                         "order by c.chunk_index asc limit 1 for update",
                 docId, versionNo, chunkIndex);
         return rows.isEmpty() ? null : rows.get(0);

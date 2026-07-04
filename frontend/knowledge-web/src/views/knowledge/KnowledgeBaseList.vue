@@ -3,11 +3,51 @@
     <header class="kb-hero">
       <div class="kb-hero-copy">
         <div class="kb-eyebrow">KNOWLEDGE BASES</div>
-        <h1>知识库</h1>
+        <h1>
+          知识库
+          <el-tooltip content="统一管理知识资产、策略版本、文档规模与回收站流转。" placement="right">
+            <span class="km-info-dot">?</span>
+          </el-tooltip>
+        </h1>
         <p>集中管理企业知识资产、检索策略与文档规模，保持内容结构清晰可控。</p>
+        <div class="km-chip-row kb-hero-chips">
+          <span class="km-capability-chip">多知识库治理</span>
+          <span class="km-capability-chip">切片策略可控</span>
+          <span class="km-capability-chip">检索策略版本化</span>
+          <span class="km-capability-chip">审核与回收站</span>
+        </div>
       </div>
-      <el-button type="primary" class="kb-create-button" @click="openCreate">新建知识库</el-button>
+      <div class="kb-hero-actions">
+        <el-button type="primary" class="kb-create-button" @click="openCreate">新建知识库</el-button>
+        <el-button
+          class="kb-danger-button"
+          :disabled="!selectedIds.length || batchDeleting"
+          :loading="batchDeleting"
+          @click="batchDelete"
+        >
+          批量删除{{ selectedIds.length ? ` (${selectedIds.length})` : '' }}
+        </el-button>
+        <el-tooltip content="从这里进入知识库创建、文档入库、策略变更和回收管理。" placement="bottom">
+          <el-button class="kb-guide-button">功能导览</el-button>
+        </el-tooltip>
+      </div>
     </header>
+
+    <section class="km-stat-grid kb-overview" aria-label="知识库概览">
+      <el-tooltip v-for="card in overviewCards" :key="card.label" :content="card.desc" placement="top">
+        <article class="km-stat-card">
+          <span class="km-stat-label">{{ card.label }}</span>
+          <div class="km-stat-value">{{ card.value }}</div>
+          <p class="km-stat-desc">{{ card.desc }}</p>
+        </article>
+      </el-tooltip>
+    </section>
+
+    <section class="kb-capability-strip km-lift-card" aria-label="知识库能力说明">
+      <span>能力外显</span>
+      <strong>文档入库、自动切片、向量化、人工审核、跨库检索与策略重处理已串成完整闭环。</strong>
+      <el-button text @click="router.push('/search')">开始检索</el-button>
+    </section>
 
     <section class="kb-filter-panel" aria-label="知识库筛选">
       <el-form :inline="true" :model="filter" class="kb-filter-form">
@@ -38,10 +78,12 @@
           <h2>列表</h2>
           <span>{{ total }} 个知识库</span>
         </div>
+        <span class="kb-toolbar-hint">支持文档入库、切片策略、检索策略与回收站管理</span>
       </div>
 
       <div class="kb-table-wrap">
-        <el-table v-loading="loading" :data="rows">
+        <el-table v-loading="loading" :data="rows" row-key="id" @selection-change="handleSelectionChange">
+          <el-table-column type="selection" width="48" :selectable="canSelectRow" />
           <el-table-column prop="id" label="ID" width="72" />
           <el-table-column prop="name" label="名称" min-width="220">
             <template #default="{ row }">
@@ -68,24 +110,18 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="retrievalStrategy" label="检索策略" width="124">
-            <template #default="{ row }">{{ strategyLabel(row.retrievalStrategy) }}</template>
-          </el-table-column>
-          <el-table-column prop="chunkStrategy" label="切片策略" width="124">
-            <template #default="{ row }">{{ chunkStrategyLabel(row.chunkStrategy) }}</template>
-          </el-table-column>
           <el-table-column prop="documentCount" label="文档数" width="92" />
+          <el-table-column label="切片数" width="92">
+            <template #default>进入空间查看</template>
+          </el-table-column>
           <el-table-column prop="strategyVersion" label="策略版本" width="104" />
-          <el-table-column prop="createdByName" label="创建人" width="124" />
-          <el-table-column prop="createdAt" label="创建时间" width="180" />
-          <el-table-column label="操作" width="316" fixed="right">
+          <el-table-column prop="updatedAt" label="最近更新" min-width="160">
+            <template #default="{ row }">{{ row.updatedAt || row.createdAt }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="150">
             <template #default="{ row }">
               <div class="kb-actions">
-                <el-button v-if="!isDeleted(row)" link type="primary" @click="goDetail(row)">详情</el-button>
-                <el-button v-if="!isDeleted(row)" link type="primary" @click="goDocuments(row)">文档</el-button>
-                <el-button v-if="!isDeleted(row)" link type="primary" @click="openEdit(row)">编辑</el-button>
-                <el-button v-if="!isDeleted(row)" link type="primary" @click="confirmReprocess(row)">策略变更</el-button>
-                <el-button v-if="!isDeleted(row)" link type="danger" @click="confirmDelete(row)">删除</el-button>
+                <el-button v-if="!isDeleted(row)" type="primary" @click="goDetail(row)">进入空间</el-button>
               </div>
             </template>
           </el-table-column>
@@ -120,7 +156,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -138,6 +174,7 @@ import {
   KB_RETRIEVAL_STRATEGIES,
 } from '@/types/knowledge-base'
 import KnowledgeBaseFormDialog from '@/components/knowledge/KnowledgeBaseFormDialog.vue'
+import { fetchStatsOverview, type StatsOverview } from '@/api/modules/stats'
 
 const router = useRouter()
 
@@ -147,10 +184,36 @@ const pageSize = ref(10)
 const total = ref(0)
 const rows = ref<KnowledgeBaseVO[]>([])
 const loading = ref(false)
+const selectedIds = ref<number[]>([])
+const batchDeleting = ref(false)
+const overview = ref<StatsOverview | null>(null)
 
 const dialogVisible = ref(false)
 const dialogMode = ref<'create' | 'edit'>('create')
 const editing = ref<KnowledgeBaseVO | null>(null)
+
+const overviewCards = computed(() => [
+  {
+    label: '知识库总数',
+    value: formatNumber(overview.value?.knowledgeBaseTotal ?? total.value),
+    desc: '可用于组织不同业务域的知识资产',
+  },
+  {
+    label: '文档总数',
+    value: formatNumber(overview.value?.documentTotal ?? rows.value.reduce((sum, row) => sum + (row.documentCount || 0), 0)),
+    desc: '上传、解析、审核链路中的文档规模',
+  },
+  {
+    label: '切片总数',
+    value: formatNumber(overview.value?.chunkTotal ?? 0),
+    desc: '已拆分并可进入向量化的知识片段',
+  },
+  {
+    label: '待审核',
+    value: formatNumber(overview.value?.documentPendingReview ?? 0),
+    desc: '需要人工确认的文档与切片',
+  },
+])
 
 async function reload() {
   loading.value = true
@@ -222,6 +285,22 @@ function goDocuments(row: KnowledgeBaseVO) {
   router.push({ name: 'DocumentList', params: { kbId: String(row.id) } })
 }
 
+async function loadOverview() {
+  try {
+    overview.value = await fetchStatsOverview(30)
+  } catch {
+    overview.value = null
+  }
+}
+
+function handleSelectionChange(selection: KnowledgeBaseVO[]) {
+  selectedIds.value = selection.filter((row) => !isDeleted(row)).map((row) => row.id)
+}
+
+function canSelectRow(row: KnowledgeBaseVO) {
+  return !isDeleted(row)
+}
+
 async function confirmDelete(row: KnowledgeBaseVO) {
   try {
     await ElMessageBox.confirm(
@@ -242,7 +321,35 @@ async function confirmDelete(row: KnowledgeBaseVO) {
 }
 
 async function batchDelete() {
-  // 列表内未实现多选；保留入口给后续增强
+  if (!selectedIds.value.length) {
+    ElMessage.warning('请先选择要删除的知识库')
+    return
+  }
+  const count = selectedIds.value.length
+  try {
+    await ElMessageBox.confirm(
+      `确定删除选中的 ${count} 个知识库？关联文档将一并放入回收站。`,
+      '批量删除知识库',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  batchDeleting.value = true
+  try {
+    const resp = await batchDeleteKnowledgeBases([...selectedIds.value])
+    if (resp.code === 0) {
+      ElMessage.success(`已删除 ${count} 个知识库`)
+      selectedIds.value = []
+      await reload()
+    } else {
+      ElMessage.error(resp.message || '批量删除失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || e?.message || '批量删除失败')
+  } finally {
+    batchDeleting.value = false
+  }
 }
 
 async function confirmReprocess(row: KnowledgeBaseVO) {
@@ -284,19 +391,38 @@ function isDeleted(row: KnowledgeBaseVO) {
   return row.isDeleted === 1 || row._isDeleted === 1
 }
 
-onMounted(() => reload())
+function formatNumber(value: number) {
+  return Number.isFinite(value) ? value.toLocaleString('zh-CN') : '0'
+}
+
+onMounted(() => {
+  reload()
+  loadOverview()
+})
 </script>
 
 <style scoped>
 .kb-list-page {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
 .kb-hero {
   display: flex;
   gap: 24px;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 34px;
+  margin-bottom: 0;
+  padding: 28px;
+  overflow: hidden;
+  border: 1px solid var(--km-border-light);
+  border-radius: var(--km-radius-xl);
+  background:
+    linear-gradient(135deg, rgba(79, 214, 154, 0.16), rgba(255, 255, 255, 0.045) 42%, rgba(255, 143, 112, 0.07)),
+    rgba(12, 22, 19, 0.72);
+  box-shadow: var(--km-shadow-card);
+  backdrop-filter: blur(18px);
 }
 .kb-hero-copy {
   max-width: 720px;
@@ -323,17 +449,68 @@ onMounted(() => reload())
   color: var(--km-muted);
   font-size: 15px;
 }
+.kb-hero-chips {
+  margin-top: 18px;
+}
+.kb-hero-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
 .kb-create-button {
   flex: 0 0 auto;
   min-width: 124px;
   height: 42px;
   padding: 0 20px;
 }
+.kb-danger-button {
+  min-width: 116px;
+}
+.kb-guide-button {
+  min-width: 104px;
+  color: var(--km-green-strong);
+}
+.kb-overview {
+  margin-top: -2px;
+}
+.kb-capability-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 15px 18px;
+  border: 1px solid var(--km-border-light);
+  border-radius: var(--km-radius-lg);
+  background:
+    linear-gradient(135deg, rgba(79, 214, 154, 0.11), rgba(113, 215, 255, 0.045)),
+    rgba(255, 255, 255, 0.035);
+  box-shadow: var(--km-shadow-soft);
+}
+.kb-capability-strip span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--km-green-strong);
+  background: rgba(79, 214, 154, 0.12);
+  font-size: 12px;
+  font-weight: 700;
+}
+.kb-capability-strip strong {
+  color: var(--km-text);
+  font-size: 13px;
+  font-weight: 620;
+}
 .kb-filter-panel {
-  margin-bottom: 26px;
-  padding: 18px 0 20px;
-  border-top: 1px solid rgba(217, 217, 221, 0.72);
-  border-bottom: 1px solid rgba(217, 217, 221, 0.72);
+  margin-bottom: 0;
+  padding: 18px;
+  border: 1px solid var(--km-border-light);
+  border-radius: var(--km-radius-lg);
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: var(--km-shadow-soft);
 }
 .kb-filter-form {
   display: flex;
@@ -368,12 +545,12 @@ onMounted(() => reload())
   min-width: 82px;
   border-color: var(--km-border);
   color: var(--km-text);
-  background: rgba(255, 255, 255, 0.68);
+  background: rgba(255, 255, 255, 0.055);
 }
 .kb-query-button:hover {
   border-color: var(--km-green);
-  color: var(--km-green);
-  background: rgba(237, 252, 233, 0.6);
+  color: var(--km-green-strong);
+  background: rgba(79, 214, 154, 0.1);
 }
 .kb-reset-button {
   color: var(--km-muted);
@@ -402,24 +579,25 @@ onMounted(() => reload())
 }
 .kb-table-wrap {
   width: 100%;
-  overflow-x: auto;
-  border: 1px solid rgba(217, 217, 221, 0.84);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.72);
+  overflow-x: hidden;
+  border: 1px solid var(--km-border-light);
+  border-radius: var(--km-radius-lg);
+  background: rgba(255, 255, 255, 0.035);
   box-shadow: var(--km-shadow-soft);
+  backdrop-filter: blur(18px);
 }
 .kb-table-wrap :deep(.el-table) {
-  min-width: 1280px;
+  width: 100%;
   background: transparent;
 }
 .kb-table-wrap :deep(.el-table__inner-wrapper::before) {
   display: none;
 }
 .kb-table-wrap :deep(.el-table th.el-table__cell) {
-  background: rgba(246, 246, 243, 0.86);
+  background: rgba(255, 255, 255, 0.045);
 }
 .kb-table-wrap :deep(.el-table td.el-table__cell) {
-  border-bottom-color: rgba(229, 231, 235, 0.86);
+  border-bottom-color: var(--km-border-light);
 }
 .kb-table-wrap :deep(.el-table__fixed-right::before),
 .kb-table-wrap :deep(.el-table__fixed::before) {
@@ -444,12 +622,20 @@ onMounted(() => reload())
   padding: 4px 9px;
   overflow: hidden;
   border-radius: 999px;
-  color: var(--km-green);
-  background: rgba(237, 252, 233, 0.72);
+  color: var(--km-green-strong);
+  background: rgba(79, 214, 154, 0.11);
   font-size: 12px;
   font-weight: 620;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.kb-soft-label.blue {
+  color: var(--km-cyan);
+  background: var(--km-blue-soft);
+}
+.kb-toolbar-hint {
+  color: var(--km-muted);
+  font-size: 13px;
 }
 .kb-status-tag {
   border-color: transparent;
@@ -457,21 +643,11 @@ onMounted(() => reload())
 }
 .kb-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 2px 8px;
+  justify-content: flex-end;
   align-items: center;
 }
 .kb-actions :deep(.el-button + .el-button) {
   margin-left: 0;
-}
-.kb-actions :deep(.el-button.is-link) {
-  height: 28px;
-  padding: 0 2px;
-  color: var(--km-focus);
-  font-weight: 560;
-}
-.kb-actions :deep(.el-button--danger.is-link) {
-  color: #b53b2d;
 }
 .kb-empty-state {
   padding: 58px 20px;
@@ -506,10 +682,19 @@ onMounted(() => reload())
   .kb-hero {
     flex-direction: column;
     gap: 18px;
-    margin-bottom: 26px;
+    padding: 22px;
+  }
+  .kb-hero-actions {
+    width: 100%;
+  }
+  .kb-capability-strip {
+    grid-template-columns: 1fr;
   }
   .kb-create-button {
-    width: 100%;
+    flex: 1;
+  }
+  .kb-danger-button {
+    flex: 1;
   }
   .kb-filter-form {
     display: grid;

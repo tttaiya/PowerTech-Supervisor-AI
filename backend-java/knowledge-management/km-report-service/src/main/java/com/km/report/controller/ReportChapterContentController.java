@@ -28,6 +28,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -163,19 +165,39 @@ public class ReportChapterContentController {
     }
 
     private String renderMarkdownTable(InsertTableRequest request) {
-        if (request == null || request.getHeaders() == null || request.getHeaders().isEmpty()) {
-            return "|列1|列2|列1|列2|\n|---|---|\n|数据1|数据2|数据1|数据2|";
+        List<String> headers = new ArrayList<>();
+        if (request != null && request.getHeaders() != null) {
+            for (String header : request.getHeaders()) {
+                String sanitized = sanitizeTableCell(header);
+                if (sanitized.length() > 0) {
+                    headers.add(sanitized);
+                }
+            }
         }
-        int colCount = request.getHeaders().size();
+        if (headers.isEmpty()) {
+            headers.add("列1");
+            headers.add("列2");
+        }
+        int colCount = headers.size();
+
         StringBuilder builder = new StringBuilder();
-        if (request.getTitle() != null && request.getTitle().trim().length() > 0) {
+        if (request != null && request.getTitle() != null && request.getTitle().trim().length() > 0) {
             builder.append("**").append(request.getTitle().trim()).append("**\n\n");
         }
-        builder.append("|").append(String.join("|", request.getHeaders())).append("|\n");
-        builder.append("|").append(request.getHeaders().stream().map(item -> "---").collect(Collectors.joining("|"))).append("|\n");
-        if (request.getRows() != null) {
+
+        builder.append("|").append(String.join("|", headers)).append("|\n");
+        builder.append("|")
+                .append(Collections.nCopies(colCount, "---").stream().collect(Collectors.joining("|")))
+                .append("|\n");
+
+        if (request != null && request.getRows() != null) {
             for (List<String> row : request.getRows()) {
-                List<String> cells = new java.util.ArrayList<>(row);
+                List<String> cells = new ArrayList<>();
+                if (row != null) {
+                    for (String cell : row) {
+                        cells.add(sanitizeTableCell(cell));
+                    }
+                }
                 while (cells.size() < colCount) {
                     cells.add("");
                 }
@@ -187,5 +209,16 @@ public class ReportChapterContentController {
         }
         return builder.toString();
     }
+
+    private String sanitizeTableCell(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("|", "\\|")
+                .replace("\r", " ")
+                .replace("\n", " ")
+                .trim();
+    }
+
     private String safe(String value) { return value == null ? "" : value; }
 }

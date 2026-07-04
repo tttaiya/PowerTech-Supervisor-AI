@@ -51,13 +51,17 @@ export function updateDocumentTags(docId: number, tags: string[]) {
 }
 
 /** US3.7 删除单个文档（逻辑删除 → 回收站；R3 检索侧靠 is_deleted 过滤） */
-export function deleteDocument(docId: number) {
-  return del<void>(`/documents/${docId}`).then((r) => r.data)
+export function deleteDocument(docId: number, confirmProcessing = false) {
+  return del<void>(`/documents/${docId}`, { params: { confirmProcessing } }).then((r) => r.data)
 }
 
 /** 批量删除文档 */
-export function batchDeleteDocuments(ids: number[]) {
-  return post<void>('/documents/batch-delete', ids).then((r) => r.data)
+export function batchDeleteDocuments(ids: number[], confirmProcessing = false) {
+  return post<void>('/documents/batch-delete', ids, { params: { confirmProcessing } }).then((r) => r.data)
+}
+
+export function retryDocument(docId: number) {
+  return post<{ taskId: number }>(`/documents/${docId}/retry`).then((r) => r.data)
 }
 
 /** 查询文档处理任务历史（P1-2：按需加载，避免列表 N+1） */
@@ -90,9 +94,9 @@ export function permanentDeleteDocument(docId: number) {
 }
 
 /** 查看切片详情（US3.9，READY 状态可用） */
-export function fetchDocumentChunks(docId: number, page = 1, pageSize = 20) {
+export function fetchDocumentChunks(docId: number, page = 1, pageSize = 20, keyword = '') {
   return get<PageResult<DocumentChunk>>(`/documents/${docId}/chunks`, {
-    params: { page, pageSize },
+    params: { page, pageSize, keyword: keyword || undefined },
   }).then((r) => r.data)
 }
 
@@ -119,7 +123,7 @@ export function validateUploadFile(file: File): string | null {
 
 export function parseTagsInput(input: string): string[] {
   return input
-    .split(/[,，]/)
+    .split(/[\s,，]+/)
     .map((t) => t.trim())
     .filter(Boolean)
 }
