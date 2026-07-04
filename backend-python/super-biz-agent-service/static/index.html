@@ -4,100 +4,217 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>智能OnCall助手</title>
-    <link rel="stylesheet" href="/static/styles.css">
-    <!-- Markdown 渲染库 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css?v=20260704-ui-fix">
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
-    <!-- 代码高亮库（可选） -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/es/highlight.min.js"></script>
 </head>
 <body>
+    <div class="app-bg-grid"></div>
+    <div class="app-bg-orb orb-a"></div>
+    <div class="app-bg-orb orb-b"></div>
+    <div class="app-bg-orb orb-c"></div>
+
     <section class="login-screen" id="loginScreen">
-        <div class="login-panel">
-            <div>
-                <h1>智能OnCall助手</h1>
-                <p>登录后开始对话</p>
+        <div class="auth-shell">
+            <div class="auth-overview">
+                <div class="auth-brand">
+                    <span class="auth-brand-mark">
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M12 2L19 6V12C19 16.8 15.9 20.9 12 22C8.1 20.9 5 16.8 5 12V6L12 2Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>
+                            <path d="M9 12L11 14L15 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>
+                        </svg>
+                    </span>
+                    <div>
+                        <strong>智能 OnCall 助手</strong>
+                        <span>Intelligent Incident Copilot</span>
+                    </div>
+                </div>
+
+                <div class="auth-copy">
+                    <span class="eyebrow">OPS CONSOLE</span>
+                    <h1>把告警处置、知识检索和对话分析放进同一个工作台。</h1>
+                    <p>延续你给的登录稿风格，我们把主界面也改成同一套深色玻璃质感，方便从认证页顺滑进入对话工作流。</p>
+                </div>
+
+                <div class="auth-metric-row">
+                    <div class="auth-metric-card">
+                        <span>模式</span>
+                        <strong>Knowledge RAG</strong>
+                    </div>
+                    <div class="auth-metric-card">
+                        <span>状态</span>
+                        <strong>System Ready</strong>
+                    </div>
+                    <div class="auth-metric-card">
+                        <span>体验</span>
+                        <strong>Chat + Admin</strong>
+                    </div>
+                </div>
+
+                <div class="auth-feature-list">
+                    <div class="auth-feature-card">
+                        <span class="auth-feature-kicker">01</span>
+                        <h2>知识问答</h2>
+                        <p>将资料检索、引用展示和答案生成整合到一个连续会话中。</p>
+                    </div>
+                    <div class="auth-feature-card">
+                        <span class="auth-feature-kicker">02</span>
+                        <h2>过程可视化</h2>
+                        <p>保留执行过程、引用详情和历史会话，方便回看与复盘。</p>
+                    </div>
+                </div>
             </div>
-            <div class="login-form">
-                <input class="login-input" id="usernameInput" placeholder="用户名" autocomplete="username">
-                <input class="login-input" id="passwordInput" placeholder="密码" type="password" autocomplete="current-password">
-                <button class="login-primary" id="loginBtn">登录</button>
-                <button class="login-secondary" id="registerBtn">注册并登录</button>
-                <div class="login-message" id="authUser"></div>
+
+            <div class="auth-card">
+                <div class="auth-card-header">
+                    <span class="eyebrow">SECURE ACCESS</span>
+                    <h2>欢迎回来</h2>
+                    <p>登录后进入你的 OnCall 对话工作台。</p>
+                </div>
+
+                <div class="auth-form">
+                    <label class="auth-field">
+                        <span>用户名</span>
+                        <div class="auth-input-wrap">
+                            <svg class="auth-input-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M20 21V19C20 16.8 18.2 15 16 15H8C5.8 15 4 16.8 4 19V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+                                <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"></circle>
+                            </svg>
+                            <input class="login-input" id="usernameInput" placeholder="operator@power-grid.cn" autocomplete="username">
+                        </div>
+                    </label>
+
+                    <label class="auth-field">
+                        <span>密码</span>
+                        <div class="auth-input-wrap">
+                            <svg class="auth-input-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <rect x="4" y="11" width="16" height="9" rx="2" stroke="currentColor" stroke-width="2"></rect>
+                                <path d="M8 11V8C8 5.8 9.8 4 12 4C14.2 4 16 5.8 16 8V11" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+                            </svg>
+                            <input class="login-input" id="passwordInput" placeholder="请输入密码" type="password" autocomplete="current-password">
+                        </div>
+                    </label>
+
+                    <div class="auth-action-row">
+                        <button class="login-primary" id="loginBtn" type="button">登录工作台</button>
+                        <button class="login-secondary" id="registerBtn" type="button">注册并登录</button>
+                    </div>
+
+                    <div class="login-message" id="authUser">请登录后继续</div>
+                </div>
+
+                <div class="auth-footer-note">
+                    <span class="status-dot"></span>
+                    <span>统一入口已连接知识问答、后台管理和引用追踪能力</span>
+                </div>
             </div>
         </div>
     </section>
 
     <div class="app-layout authed-only" id="appLayout" style="display: none;">
-        <!-- 左侧边栏 -->
         <aside class="sidebar">
-            <div class="sidebar-header">
-                <h2 class="sidebar-title">智能OnCall助手</h2>
-            </div>
-            
-            <div class="sidebar-content">
-                <button class="new-chat-btn" id="newChatBtn">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                    <span>新建对话</span>
-                </button>
-                
-                <div class="chat-history-section">
-                    <div class="history-header">
-                        <span>近期对话</span>
-                    </div>
-                    <div class="chat-history-list" id="chatHistoryList">
-                        <!-- 历史对话列表将在这里动态生成 -->
+            <div class="sidebar-panel">
+                <div class="sidebar-header">
+                    <div class="sidebar-brand">
+                        <span class="sidebar-brand-mark">
+                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M12 3L19 7V12.5C19 16.9 16.2 20.8 12 22C7.8 20.8 5 16.9 5 12.5V7L12 3Z" stroke="currentColor" stroke-width="2"></path>
+                                <path d="M9 12.5L11 14.5L15.5 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                        </span>
+                        <div>
+                            <h2 class="sidebar-title">智能OnCall助手</h2>
+                            <p class="sidebar-subtitle">Incident Workspace</p>
+                        </div>
                     </div>
                 </div>
 
-                <!--
-                    R18: 知识管理 / 报告生成业务入口
-                    - 知识管理走 /knowledge/ 路径，Nginx 反代到 knowledge-web:80 容器
-                    - 报告生成走 /reports/ 路径，Nginx 反代到同一个 knowledge-web 容器
-                -->
-                <div class="sidebar-business-section">
-                    <a class="sidebar-btn" href="/knowledge/bases">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M4 4h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H4V4z" stroke="currentColor" stroke-width="1.6"/>
-                            <path d="M8 8h6M8 12h6M8 16h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-                        </svg>
-                        <span>知识管理</span>
+                <div class="workspace-user-card">
+                    <div class="workspace-user-avatar" id="sidebarUserAvatar">OC</div>
+                    <div class="workspace-user-copy">
+                        <strong id="sidebarUserName">未登录</strong>
+                        <span id="sidebarUserMeta">等待身份验证</span>
+                    </div>
+                </div>
+
+                <div class="workspace-shortcuts" aria-label="业务快捷入口">
+                    <a class="workspace-nav-button" href="http://localhost:8080/knowledge/">
+                        <span class="workspace-nav-button__label">知识管理</span>
+                        <span class="workspace-nav-button__meta">进入知识库与文档工作台</span>
                     </a>
-                    <a class="sidebar-btn" href="/reports/">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M5 3h10l4 4v14a1 1 0 0 1-1 1H5V3z" stroke="currentColor" stroke-width="1.6"/>
-                            <path d="M9 11h6M9 15h6M9 19h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-                        </svg>
-                        <span>报告生成</span>
+                    <a class="workspace-nav-button workspace-nav-button--secondary" href="http://localhost:8080/reports/">
+                        <span class="workspace-nav-button__label">报告生成</span>
+                        <span class="workspace-nav-button__meta">跳转到报告生成页面</span>
                     </a>
                 </div>
 
+                <div class="sidebar-content">
+                    <button class="new-chat-btn" id="newChatBtn" type="button">
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+                        </svg>
+                        <span>新建对话</span>
+                    </button>
+
+                    <div class="chat-history-section">
+                        <div class="history-header">
+                            <span>Recent Sessions</span>
+                        </div>
+                        <div class="chat-history-list" id="chatHistoryList"></div>
+                    </div>
+                </div>
+
+                <button class="logout-btn" id="logoutBtn" type="button">退出登录</button>
             </div>
-            <button class="logout-btn" id="logoutBtn">退出登录</button>
         </aside>
 
-        <!-- 主内容区域 -->
         <main class="main-content">
-            <div class="chat-container">
-                <div class="welcome-greeting" id="welcomeGreeting">
-                    <p>你好！我是智能Oncall小助手</p>
-                </div>
-                <div class="chat-messages" id="chatMessages">
-                </div>
-                
-                <div class="chat-input-container">
-                    <div class="input-group-wrapper">
-                        <div class="input-wrapper">
-                            <textarea id="messageInput" placeholder="问问智能OnCall助手" maxlength="1000" class="message-input" rows="1"></textarea>
-                            <div class="input-bottom-bar">
-                                <div class="right-actions">
-                                    <button class="send-btn-circle" id="sendButton" title="发送">
-                                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                        </svg>
-                                    </button>
+            <div class="workspace-shell">
+                <header class="workspace-header">
+                    <div class="workspace-heading">
+                        <span class="eyebrow">CHAT CONSOLE</span>
+                        <h1>对话工作台</h1>
+                        <p id="workspaceStatus">知识问答、引用追踪与历史对话已就绪</p>
+                    </div>
+                    <div class="workspace-header-actions">
+                        <div class="workspace-chip">
+                            <span class="status-dot"></span>
+                            <span>Connected</span>
+                        </div>
+                        <a class="admin-top-link" id="adminLink" href="/static/admin.html">后台</a>
+                    </div>
+                </header>
+
+                <div class="chat-container" id="chatWorkspace">
+                    <div class="welcome-greeting" id="welcomeGreeting">
+                        <span class="welcome-kicker">SMART RESPONSE CENTER</span>
+                        <p>从这里开始一次新的值班问答</p>
+                        <small>输入告警、排障问题或知识库查询需求，系统会结合检索结果与引用切片返回答案。</small>
+                    </div>
+
+                    <div class="chat-messages" id="chatMessages"></div>
+
+                    <div class="chat-input-container">
+                        <div class="input-group-wrapper">
+                            <div class="input-wrapper">
+                                <div class="input-topline">
+                                    <span class="input-mode-pill">RAG Copilot</span>
+                                    <span class="input-hint">Shift + Enter 换行</span>
+                                </div>
+                                <textarea id="messageInput" placeholder="问问智能OnCall助手" maxlength="1000" class="message-input" rows="1"></textarea>
+                                <div class="input-bottom-bar">
+                                    <div class="input-caption">支持运维问答、故障分析、知识检索与引用查看</div>
+                                    <div class="right-actions">
+                                        <button class="send-btn-circle" id="sendButton" title="发送" type="button">
+                                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -107,7 +224,6 @@
         </main>
     </div>
 
-    <!-- 加载遮罩层 -->
     <div id="loadingOverlay" class="loading-overlay">
         <div class="loading-content">
             <div class="loading-spinner"></div>
@@ -152,6 +268,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260704-ui-fix"></script>
 </body>
 </html>

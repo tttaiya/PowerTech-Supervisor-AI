@@ -4,22 +4,42 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理后台 - 智能OnCall助手</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css?v=20260704-admin-fit">
 </head>
-<body>
+<body class="admin-page">
+    <div class="app-bg-grid"></div>
+    <div class="app-bg-orb orb-a"></div>
+    <div class="app-bg-orb orb-b"></div>
+    <div class="app-bg-orb orb-c"></div>
     <div class="admin-layout">
         <aside class="admin-sidebar">
-            <h1>管理后台</h1>
+            <div class="admin-brand-block">
+                <span class="sidebar-brand-mark">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M12 3L19 7V12.5C19 16.9 16.2 20.8 12 22C7.8 20.8 5 16.9 5 12.5V7L12 3Z" stroke="currentColor" stroke-width="2"></path>
+                        <path d="M9 12.5L11 14.5L15.5 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                </span>
+                <div>
+                    <h1>管理后台</h1>
+                    <span>Admin Console</span>
+                </div>
+            </div>
             <a href="/">返回问答</a>
             <button data-admin-tab="dashboard">运营总览</button>
             <button data-admin-tab="models">模型配置</button>
+            <button data-admin-tab="knowledge">知识库与 RAG</button>
         </aside>
         <main class="admin-main">
             <div class="admin-user" id="adminUser"></div>
             <section id="dashboardPanel" class="admin-panel"></section>
             <section id="modelPanel" class="admin-panel"></section>
+            <section id="knowledgePanel" class="admin-panel"></section>
         </main>
     </div>
-    <script src="/static/admin.js"></script>
+    <script src="/static/admin.js?v=20260704-admin-fit"></script>
 </body>
 </html>
