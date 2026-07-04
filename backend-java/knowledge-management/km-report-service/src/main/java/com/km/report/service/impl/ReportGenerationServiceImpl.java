@@ -22,12 +22,16 @@ import com.km.report.service.ReportOutlineItemService;
 import com.km.report.service.ReportRecordService;
 import com.km.report.vo.ReportGenerationProgressVO;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import javax.annotation.Resource;
+
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 public class ReportGenerationServiceImpl implements ReportGenerationService {
@@ -149,39 +153,32 @@ public class ReportGenerationServiceImpl implements ReportGenerationService {
     }
 
     private ChapterDraft buildChapterDraft(ReportRecord record, ReportOutlineItem outlineItem, List<ReportMaterial> materials) {
+        if (!reportAiService.enabled()) {
+            throw new BizException("报告正文生成需要启用 AI，请先配置 report.llm.enabled、report.llm.base-url、report.llm.model 和 API Key");
+        }
         String materialContext = buildMaterialContext(materials);
         List<KnowledgeSearchHit> knowledgeHits = resolveKnowledgeHits(record, outlineItem);
         String knowledgeContext = buildKnowledgeContext(knowledgeHits);
         String chapterContext = buildChapterContext(record, outlineItem);
-        if (reportAiService.enabled()) {
-            AiGenerateRequest aiRequest = new AiGenerateRequest();
-            aiRequest.setReportId(record.getId());
-            aiRequest.setChapterId(outlineItem.getId());
-            aiRequest.setResponseFormat("text");
-            aiRequest.setSystemPrompt("你是正式报告撰写助手，请输出可直接入稿的章节正文，语言规范、客观、完整。不要输出标题编号以外的解释。");
-            aiRequest.setUserPrompt("报告名称：" + safe(record.getReportName())
-                    + "\n报告类型：" + safe(record.getReportType())
-                    + "\n章节编号：" + safe(outlineItem.getChapterNo())
-                    + "\n章节标题：" + safe(outlineItem.getChapterTitle())
-                    + "\n章节上下文：" + chapterContext
-                    + "\n知识库引用上下文：" + knowledgeContext
-                    + "\n素材上下文：" + materialContext
-                    + "\n请生成该章节正文，要求与上下文一致、可直接用于正式报告。" );
-            AiGenerateResponse response = reportAiService.generate(aiRequest);
-            if (response != null && response.getContent() != null && response.getContent().trim().length() > 0) {
-                return new ChapterDraft(response.getContent().trim(), knowledgeHits);
-            }
+
+        AiGenerateRequest aiRequest = new AiGenerateRequest();
+        aiRequest.setReportId(record.getId());
+        aiRequest.setChapterId(outlineItem.getId());
+        aiRequest.setResponseFormat("text");
+        aiRequest.setSystemPrompt("你是正式报告撰写助手，请输出可直接入稿的章节正文，语言规范、客观、完整。不要输出标题编号以外的解释。");
+        aiRequest.setUserPrompt("报告名称：" + safe(record.getReportName())
+                + "\n报告类型：" + safe(record.getReportType())
+                + "\n章节编号：" + safe(outlineItem.getChapterNo())
+                + "\n章节标题：" + safe(outlineItem.getChapterTitle())
+                + "\n章节上下文：" + chapterContext
+                + "\n知识库引用上下文：" + knowledgeContext
+                + "\n素材上下文：" + materialContext
+                + "\n请生成该章节正文，要求与上下文一致、可直接用于正式报告。");
+        AiGenerateResponse response = reportAiService.generate(aiRequest);
+        if (response != null && response.getContent() != null && response.getContent().trim().length() > 0) {
+            return new ChapterDraft(response.getContent().trim(), knowledgeHits);
         }
-        StringBuilder builder = new StringBuilder();
-        builder.append(outlineItem.getChapterTitle()).append('\n');
-        builder.append("基于已收集的材料对该章节进行正式撰写。\n");
-        if (knowledgeContext.length() > 0) {
-            builder.append(knowledgeContext);
-        }
-        if (materialContext.length() > 0) {
-            builder.append(materialContext);
-        }
-        return new ChapterDraft(builder.toString(), knowledgeHits);
+        throw new BizException("AI 未返回有效章节正文，请检查模型配置或重试");
     }
 
     private List<KnowledgeSearchHit> resolveKnowledgeHits(ReportRecord record, ReportOutlineItem outlineItem) {
@@ -339,6 +336,50 @@ public class ReportGenerationServiceImpl implements ReportGenerationService {
         private ChapterDraft(String content, List<KnowledgeSearchHit> knowledgeHits) {
             this.content = content;
             this.knowledgeHits = knowledgeHits;
+        }
+    }
+
+    @Override
+    public SseEmitter streamGenerate(GenerateReportRequest request) {
+        SseEmitter emitter = new SseEmitter(30L * 60L * 1000L);
+        CompletableFuture.runAsync(() -> {
+            try {
+                GenerateContext context = prepareGeneration(request);
+                send(emitter, "start", progress(context.record, null, 0, context.outlineItems.size(), "开始逐章节生成"));
+                for (int index = 0; index < context.outlineItems.size(); index++) {
+                    ReportGenerationProgressVO chapterProgress = generateOneChapter(context, index);
+                    send(emitter, "chapter", chapterProgress);
+                }
+                context.record.setStatus(1);
+                context.record.setFinishedChapter(context.outlineItems.size());
+                context.record.setUpdateTime(LocalDateTime.now());
+                reportRecordService.updateById(context.record);
+                send(emitter, "complete", progress(context.record, null, context.outlineItems.size(), context.outlineItems.size(), "报告生成完成"));
+                emitter.complete();
+            } catch (Exception ex) {
+                sendQuietly(emitter, "error", errorProgress(request == null ? null : request.getReportId(), ex.getMessage()));
+                emitter.completeWithError(ex);
+            }
+        });
+        return emitter;
+    }
+
+    private void send(SseEmitter emitter, String event, ReportGenerationProgressVO data) throws IOException {
+        emitter.send(SseEmitter.event().name(event).data(data));
+    }
+
+    private ReportGenerationProgressVO errorProgress(Long reportId, String message) {
+        ReportGenerationProgressVO vo = new ReportGenerationProgressVO();
+        vo.setReportId(reportId);
+        vo.setStatus(-1);
+        vo.setMessage(message);
+        return vo;
+    }
+
+    private void sendQuietly(SseEmitter emitter, String event, ReportGenerationProgressVO data) {
+        try {
+            send(emitter, event, data);
+        } catch (Exception ignored) {
         }
     }
 }

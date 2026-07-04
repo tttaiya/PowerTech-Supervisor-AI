@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="power-background" aria-hidden="true">
     <div class="power-background__gradient power-background__gradient--primary"></div>
     <div class="power-background__gradient power-background__gradient--secondary"></div>
@@ -123,4 +123,3 @@ const particles = [
   }
 }
 </style>
-

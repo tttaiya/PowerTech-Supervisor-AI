@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <GlassCard class="create-layout" variant="panel">
     <template #header>
       <PowerSectionTitle
@@ -295,6 +295,7 @@ async function saveUploadedTemplate() {
 }
 
 async function createDraft() {
+  if (loading.value) return;
   if (!form.theme.trim()) {
     ElMessage.warning('请先填写报告主题');
     return;
@@ -378,5 +379,3 @@ async function createDraft() {
   }
 }
 </style>
-
-

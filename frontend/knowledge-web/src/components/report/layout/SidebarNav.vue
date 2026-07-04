@@ -1,9 +1,12 @@
-﻿<template>
+<template>
   <aside class="sidebar-nav">
     <div class="sidebar-brand">
-      <button type="button" class="brand-mark brand-back" @click="emit('go-chat')">电技</button>
+      <button type="button" class="brand-back" aria-label="返回智能问答" title="返回智能问答" @click="emit('go-chat')">
+        <span class="brand-back-icon">‹</span>
+        <span class="brand-back-text">返回</span>
+      </button>
       <div class="brand-copy">
-        <strong>电力技术监督智能辅助平台</strong>
+        <strong>报告生成</strong>
       </div>
     </div>
 
@@ -62,21 +65,36 @@ const items = [
   margin-bottom: 24px;
 }
 
-.brand-mark {
-  width: 44px;
-  height: 44px;
+.brand-back {
+  width: 58px;
+  height: 38px;
+  border: 1px solid rgba(55, 242, 177, 0.34);
   border-radius: 14px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, rgba(55, 242, 177, 0.95), rgba(61, 139, 255, 0.9));
-  color: #06111f;
-  font-weight: 900;
-  box-shadow: 0 0 20px rgba(55, 242, 177, 0.28);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: linear-gradient(135deg, rgba(55, 242, 177, 0.2), rgba(61, 139, 255, 0.14));
+  color: #dffcf3;
+  cursor: pointer;
+  font-weight: 800;
+  box-shadow: 0 0 18px rgba(55, 242, 177, 0.18);
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
-.brand-back {
-  border: 0;
-  cursor: pointer;
+.brand-back:hover {
+  transform: translateX(-2px);
+  border-color: rgba(55, 242, 177, 0.62);
+  background: linear-gradient(135deg, rgba(55, 242, 177, 0.28), rgba(61, 139, 255, 0.2));
+}
+
+.brand-back-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.brand-back-text {
+  font-size: 13px;
 }
 
 .brand-copy {

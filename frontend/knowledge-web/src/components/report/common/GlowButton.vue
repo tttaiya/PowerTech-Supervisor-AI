@@ -1,9 +1,9 @@
-﻿<template>
+<template>
   <el-button
     class="glow-button"
     :loading="loading"
     :disabled="disabled"
-    @click="$emit('click', $event)"
+    @click="emit('click', $event)"
   >
     <slot />
   </el-button>
@@ -14,6 +14,8 @@ defineProps({
   loading: Boolean,
   disabled: Boolean,
 });
+
+const emit = defineEmits(['click']);
 </script>
 
 <style scoped>
@@ -37,4 +39,3 @@ defineProps({
   box-shadow: none;
 }
 </style>
-

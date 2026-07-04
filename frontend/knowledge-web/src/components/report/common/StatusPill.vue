@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <span :class="['status-pill', `status-pill--${variant}`]">
     <slot />
   </span>
@@ -49,4 +49,3 @@ defineProps({
   color: #b6c4db;
 }
 </style>
-

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <header class="header-bar">
     <div class="header-copy">
       <strong>{{ title }}</strong>
@@ -89,5 +89,4 @@ const emit = defineEmits(['refresh-backend', 'logout']);
   border: 0;
 }
 </style>
-
 

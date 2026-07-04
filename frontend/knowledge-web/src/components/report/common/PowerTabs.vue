@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <el-tabs class="power-tabs" v-bind="$attrs" @tab-change="$emit('tab-change', $event)">
     <slot />
   </el-tabs>
@@ -23,4 +23,3 @@
   background: linear-gradient(90deg, #37f2b1, #3d8bff);
 }
 </style>
-

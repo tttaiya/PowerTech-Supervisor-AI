@@ -34,12 +34,18 @@ public class ReportAiServiceImpl implements ReportAiService {
 
     @Value("${report.llm.api-key:${REPORT_LLM_API_KEY:}}")
     private String configuredApiKey;
+    @Value("${report.llm.enabled:${REPORT_LLM_ENABLED:false}}")
+    private String configuredEnabled;
+    @Value("${report.llm.base-url:${REPORT_LLM_BASE_URL:}}")
+    private String configuredBaseUrl;
+    @Value("${report.llm.model:${REPORT_LLM_MODEL:}}")
+    private String configuredModel;
 
     private final RestTemplate restTemplate = new RestTemplate();
 
     @Override
     public boolean enabled() {
-        return "1".equals(getKey("report.llm.enabled", "0")) || "true".equalsIgnoreCase(getKey("report.llm.enabled", "false"));
+        return isEnabledValue(getKey("report.llm.enabled", "")) || isEnabledValue(configuredEnabled);
     }
 
     @Override
@@ -54,8 +60,8 @@ public class ReportAiServiceImpl implements ReportAiService {
         if (!hasText(apiKey)) {
             throw new BizException("AI API Key 未配置");
         }
-        String baseUrl = getKey("report.llm.base-url", "https://api.openai.com/v1");
-        String model = getKey("report.llm.model", "gpt-4o-mini");
+        String baseUrl = firstText(getKey("report.llm.base-url", ""), configuredBaseUrl, "https://api.openai.com/v1");
+        String model = firstText(getKey("report.llm.model", ""), configuredModel, "gpt-4o-mini");
         String url = normalizeUrl(baseUrl);
 
         String requestId = UUID.randomUUID().toString();
@@ -225,6 +231,22 @@ public class ReportAiServiceImpl implements ReportAiService {
 
     private boolean hasText(String value) {
         return value != null && value.trim().length() > 0;
+    }
+
+    private boolean isEnabledValue(String value) {
+        return "1".equals(value) || "true".equalsIgnoreCase(value);
+    }
+
+    private String firstText(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (hasText(value)) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 
     private int length(String value) {

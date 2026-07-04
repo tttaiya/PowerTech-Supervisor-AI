@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <header class="section-title">
     <div class="section-title__main">
       <span v-if="icon" class="section-title__icon">
@@ -62,4 +62,3 @@ defineProps({
   align-items: center;
 }
 </style>
-

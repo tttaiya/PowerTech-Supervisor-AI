@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <section :class="['glass-card', `glass-card--${variant}`]">
     <header v-if="$slots.header" class="glass-card__header">
       <slot name="header" />
@@ -55,4 +55,3 @@ defineProps({
   padding: 16px 18px;
 }
 </style>
-

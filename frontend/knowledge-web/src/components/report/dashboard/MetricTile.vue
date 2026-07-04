@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <article class="metric-tile">
     <span class="metric-tile__label">{{ label }}</span>
     <strong class="metric-tile__value">{{ value }}</strong>
@@ -74,4 +74,3 @@ defineProps({
   color: rgba(226, 238, 255, 0.72);
 }
 </style>
-

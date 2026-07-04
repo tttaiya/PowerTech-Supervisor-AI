@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="records-page">
     <GlassCard class="records-layout" variant="panel">
     <template #header>
@@ -51,7 +51,7 @@
     </el-descriptions>
     <template #footer>
       <el-button @click="exportVisible = false">关闭</el-button>
-      <el-button v-if="downloadUrl" type="primary" @click="download">下载 DOCX</el-button>
+      <el-button v-if="downloadUrl" type="primary" :loading="downloading" @click="download">下载 DOCX</el-button>
     </template>
   </el-dialog>
   </div>
@@ -60,7 +60,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { fileDownloadUrl, reportApi } from '@/api/modules/report';
+import { downloadReportFile, fileDownloadUrl, reportApi } from '@/api/modules/report';
 import GlassCard from './common/GlassCard.vue';
 import GlowButton from './common/GlowButton.vue';
 import PowerSectionTitle from './common/PowerSectionTitle.vue';
@@ -74,8 +74,9 @@ const exportResult = ref(null);
 const currentPage = ref(1);
 const pageSize = ref(6);
 const statusFilter = ref('all');
+const downloading = ref(false);
 
-const downloadUrl = computed(() => fileDownloadUrl(exportResult.value?.fileName || exportResult.value?.fileUrl || ''));
+const downloadUrl = computed(() => fileDownloadUrl(exportResult.value?.fileUrl || exportResult.value?.fileName || ''));
 const filteredRecords = computed(() => {
   const list = records.value || [];
   if (statusFilter.value === 'draft') return list.filter((record) => record.status === 0);
@@ -136,8 +137,26 @@ function hideOverlays() {
   exportResult.value = null;
 }
 
-function download() {
-  window.open(downloadUrl.value, '_blank');
+async function download() {
+  const fileRef = exportResult.value?.fileUrl || exportResult.value?.fileName || '';
+  if (!fileRef) return;
+
+  downloading.value = true;
+  try {
+    const blob = await downloadReportFile(fileRef);
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = exportResult.value?.fileName || 'report.docx';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(objectUrl);
+  } catch (error) {
+    ElMessage.error(`下载失败：${error.message}`);
+  } finally {
+    downloading.value = false;
+  }
 }
 </script>
 
@@ -220,4 +239,3 @@ function download() {
   }
 }
 </style>
-

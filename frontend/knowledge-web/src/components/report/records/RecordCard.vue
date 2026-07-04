@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <GlassCard class="record-card" variant="section">
     <template #header>
       <div class="record-card__header">
@@ -239,4 +239,3 @@ const exportVariant = computed(() => {
   }
 }
 </style>
-

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <section class="report-workspace">
     <PowerBackground />
 
@@ -64,6 +64,7 @@ import SidebarNav from '@/components/report/layout/SidebarNav.vue'
 import HeaderBar from '@/components/report/layout/HeaderBar.vue'
 
 type ViewKey = 'dashboard' | 'create' | 'outline' | 'generation' | 'editor' | 'records' | 'templates'
+type BackendUser = { userId?: string | number }
 
 const activeView = ref<ViewKey>('dashboard')
 const currentReportId = ref(Number(window.localStorage.getItem('current_report_id') || 1))
@@ -117,8 +118,9 @@ async function checkBackend() {
   backend.loading = true
   try {
     await reportApi.health()
+    const backendUser = await reportApi.currentUser().catch(() => null) as BackendUser | null
     backend.online = true
-    backend.text = '后端已连接'
+    backend.text = backendUser?.userId ? `后端已连接：${backendUser.userId}` : '后端已连接'
   } catch (error) {
     backend.online = false
     backend.text = '后端未连接'

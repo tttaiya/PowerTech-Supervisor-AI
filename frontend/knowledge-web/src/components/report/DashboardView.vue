@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="dashboard">
     <PowerSectionTitle
       title="后台概览"
@@ -181,4 +181,3 @@ function handleResize() {
   }
 }
 </style>
-

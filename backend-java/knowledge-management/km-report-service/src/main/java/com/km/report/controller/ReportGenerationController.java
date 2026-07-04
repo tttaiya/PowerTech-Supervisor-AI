@@ -4,12 +4,14 @@ import com.km.report.common.result.ApiResult;
 import com.km.report.dto.GenerateReportRequest;
 import com.km.report.vo.ReportGenerationProgressVO;
 import com.km.report.service.ReportGenerationService;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import javax.annotation.Resource;
 
@@ -28,5 +30,10 @@ public class ReportGenerationController {
     @GetMapping("/{reportId}/progress")
     public ApiResult<ReportGenerationProgressVO> progress(@PathVariable Long reportId) {
         return ApiResult.ok(reportGenerationService.getProgress(reportId));
+    }
+
+    @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream(@RequestBody GenerateReportRequest request) {
+        return reportGenerationService.streamGenerate(request);
     }
 }

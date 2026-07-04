@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <GlassCard class="templates-view" variant="panel">
     <template #header>
       <PowerSectionTitle
@@ -113,7 +113,8 @@ function createEmpty() {
     description: '',
     status: 1,
     templateScope: 'GLOBAL',
-    chapterCount: 0
+    chapterCount: 0,
+    creatorId: Number(localStorage.getItem('report_user_id') || 1001)
   };
 }
 
@@ -232,7 +233,6 @@ async function remove(row) {
   }
 }
 </style>
-
 
 
 

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <GlassCard class="outline-manager" variant="panel">
     <template #header>
       <PowerSectionTitle
@@ -45,7 +45,7 @@
             <el-tag class="status-tag">{{ row.status || 'DRAFT' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="300" fixed="right">
+        <el-table-column label="操作" width="380" fixed="right">
           <template #default="{ row }">
             <div class="outline-actions">
               <GlowButton class="outline-action" @click="saveItem(row)">保存</GlowButton>
@@ -130,10 +130,13 @@ function addItem() {
 async function saveItem(row) {
   if (!validateItem(row)) return;
   try {
-    const saved = row.id
-      ? await reportApi.updateOutlineItem(row.id, row)
-      : await reportApi.addOutlineItem(localReportId.value, row);
-    Object.assign(row, saved);
+    if (row.id) {
+      await reportApi.updateOutlineItem(row.id, row);
+    } else {
+      await reportApi.addOutlineItem(localReportId.value, row);
+    }
+    // 保存后重新加载以获取后端重编号的最新数据
+    await load();
     ElMessage.success('章节已保存');
   } catch (error) {
     ElMessage.error(`保存失败：${error.message}`);
@@ -144,12 +147,21 @@ async function saveAll() {
   if (!items.value.every(validateItem)) return;
   saving.value = true;
   try {
+    // 只传递需要保存的字段，避免将前端操作中的临时字段发送给后端
     const normalized = items.value
       .map((item, index) => ({
-        ...item,
+        id: item.id,
         reportId: localReportId.value,
         parentId: item.parentId ?? 0,
-        sort: item.sort ?? index + 1
+        chapterNo: item.chapterNo,
+        chapterTitle: item.chapterTitle,
+        level: item.level ?? 1,
+        sort: item.sort ?? index + 1,
+        editable: item.editable ?? 1,
+        aiGenerated: item.aiGenerated ?? 0,
+        status: item.status || 'DRAFT',
+        remark: item.remark,
+        generationPrompt: item.generationPrompt
       }))
       .sort((a, b) => (a.sort || 0) - (b.sort || 0));
     items.value = await reportApi.updateOutline(localReportId.value, normalized);
@@ -176,7 +188,8 @@ async function removeItem(row) {
     if (row.id) {
       await reportApi.deleteOutlineItem(row.id);
     }
-    items.value = items.value.filter((item) => item !== row);
+    // 删除后重新加载以刷新编号
+    await load();
     ElMessage.success('章节已删除');
   } catch (error) {
     ElMessage.error(`删除失败：${error.message}`);
@@ -184,24 +197,21 @@ async function removeItem(row) {
 }
 
 async function moveItem(row, step) {
-  const currentIndex = items.value.findIndex((item) => item === row);
-  const targetIndex = currentIndex + step;
-  if (currentIndex < 0 || targetIndex < 0 || targetIndex >= items.value.length) {
+  if (!row.id) {
+    ElMessage.warning('请先保存该章节后再移动');
     return;
   }
-  const reordered = [...items.value];
-  reordered.splice(currentIndex, 1);
-  reordered.splice(targetIndex, 0, row);
-  reordered.forEach((item, index) => {
-    item.sort = index + 1;
-  });
-  items.value = reordered;
-  if (!items.value.some((item) => item.id)) {
+  const targetSort = row.sort + step;
+  if (targetSort < 1) {
+    ElMessage.warning('已是第一个章节');
     return;
   }
   try {
-    items.value = await reportApi.updateOutline(localReportId.value, items.value);
-    ElMessage.success('章节顺序已更新');
+    await reportApi.moveOutlineItem(localReportId.value, row.id, {
+      sort: targetSort,
+      parentId: row.parentId ?? 0
+    });
+    await load();
   } catch (error) {
     ElMessage.error(`移动失败：${error.message}`);
     await load();
@@ -294,15 +304,16 @@ function validateItem(row) {
 
 .outline-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 4px;
 }
 
 .outline-action :deep(.el-button) {
-  padding: 8px 12px;
-  border-radius: 12px;
+  padding: 6px 10px;
+  border-radius: 10px;
   text-transform: none;
   letter-spacing: 0;
+  font-size: 12px;
 }
 
 .outline-action--danger :deep(.el-button) {

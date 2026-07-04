@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <el-select
     v-model="selectedId"
     filterable
@@ -97,5 +97,3 @@ watch(
   border-color: rgba(61, 139, 255, 0.38);
 }
 </style>
-
-

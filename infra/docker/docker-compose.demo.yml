@@ -326,6 +326,8 @@ services:
       context: ../..
       dockerfile: backend-java/knowledge-management/km-report-service/Dockerfile
     container_name: km-report-service
+    env_file:
+      - ../../.env
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
@@ -340,10 +342,6 @@ services:
       REPORT_EXPORTS_BUCKET: report-exports
       KM_SEARCH_BASE_URL: http://km-search-service:9103
       INTERNAL_TOKEN: demo-internal-token
-      REPORT_LLM_ENABLED: ${REPORT_LLM_ENABLED:-false}
-      REPORT_LLM_BASE_URL: ${REPORT_LLM_BASE_URL:-}
-      REPORT_LLM_MODEL: ${REPORT_LLM_MODEL:-}
-      REPORT_LLM_API_KEY: ${REPORT_LLM_API_KEY:-}
     depends_on:
       mysql:
         condition: service_healthy

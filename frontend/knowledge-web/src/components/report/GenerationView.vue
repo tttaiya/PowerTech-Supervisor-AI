@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <GlassCard class="generation-view" variant="panel">
     <template #header>
       <PowerSectionTitle
@@ -392,6 +392,5 @@ function togglePolling() {
   }
 }
 </style>
-
 
 

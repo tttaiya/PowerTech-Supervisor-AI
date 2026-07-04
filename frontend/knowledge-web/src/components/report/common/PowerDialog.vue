@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <el-dialog
     class="power-dialog"
     :model-value="modelValue"
@@ -52,4 +52,3 @@ defineProps({
   padding: 16px 24px 24px;
 }
 </style>
-

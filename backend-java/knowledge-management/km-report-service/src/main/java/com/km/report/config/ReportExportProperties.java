@@ -10,6 +10,11 @@ import org.springframework.stereotype.Component;
 public class ReportExportProperties {
 
     /**
+     * 导出文件保存目录
+     */
+    private String baseDir;
+
+    /**
      * 文件访问前缀
      */
     private String urlPrefix;
@@ -29,3 +34,4 @@ public class ReportExportProperties {
      */
     private String imageDir = "images";
 }
+

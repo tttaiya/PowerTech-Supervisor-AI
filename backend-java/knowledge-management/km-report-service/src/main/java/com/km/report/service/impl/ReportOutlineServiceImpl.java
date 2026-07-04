@@ -18,6 +18,7 @@ import com.km.report.service.ReportTemplateChapterService;
 import com.km.report.service.ReportTemplateService;
 import com.km.report.utils.ChapterNumberUtil;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import javax.annotation.Resource;
@@ -25,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -169,16 +171,35 @@ public class ReportOutlineServiceImpl implements ReportOutlineService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public List<ReportOutlineItem> updateOutline(Long reportId, List<ReportOutlineItem> items) {
         if (items == null) {
             throw new BizException("更新内容不能为空");
         }
-        reportAccessService.requireOwnedRecord(reportId);
-        reportOutlineItemService.remove(new LambdaQueryWrapper<ReportOutlineItem>().eq(ReportOutlineItem::getReportId, reportId));
+        // 鍏堟煡璇㈠嚭鏁版嵁搴撲腑宸叉湁鐨勮褰旾D闆嗗悎
+        List<ReportOutlineItem> existingItems = reportOutlineItemService.list(
+                new LambdaQueryWrapper<ReportOutlineItem>().eq(ReportOutlineItem::getReportId, reportId));
+        List<Long> existingIds = existingItems.stream()
+                .map(ReportOutlineItem::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        // 鏀堕泦鍓嶇浼犲叆鐨処D闆嗗悎
+        List<Long> incomingIds = items.stream()
+                .map(ReportOutlineItem::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        // 鍒犻櫎宸茶鍓嶇绉婚櫎鐨勯」
+        for (Long existingId : existingIds) {
+            if (!incomingIds.contains(existingId)) {
+                reportOutlineItemService.removeById(existingId);
+            }
+        }
+
+        // 閫愪釜淇濆瓨鎴栨洿鏂帮紝淇濈暀宸叉湁ID
         for (ReportOutlineItem item : items) {
-            item.setId(null);
             item.setReportId(reportId);
-            item.setCreateTime(LocalDateTime.now());
             item.setUpdateTime(LocalDateTime.now());
             if (item.getEditable() == null) {
                 item.setEditable(1);
@@ -189,8 +210,29 @@ public class ReportOutlineServiceImpl implements ReportOutlineService {
             if (!StringUtils.hasText(item.getStatus())) {
                 item.setStatus("DRAFT");
             }
+            if (item.getId() != null) {
+                ReportOutlineItem existing = reportOutlineItemService.getById(item.getId());
+                if (existing != null) {
+                    existing.setChapterTitle(item.getChapterTitle());
+                    existing.setChapterNo(item.getChapterNo());
+                    existing.setParentId(item.getParentId() == null ? 0L : item.getParentId());
+                    existing.setLevel(item.getLevel());
+                    existing.setSort(item.getSort());
+                    existing.setEditable(item.getEditable());
+                    existing.setAiGenerated(item.getAiGenerated());
+                    existing.setStatus(item.getStatus());
+                    existing.setRemark(item.getRemark());
+                    existing.setGenerationPrompt(item.getGenerationPrompt());
+                    existing.setUpdateTime(LocalDateTime.now());
+                    reportOutlineItemService.updateById(existing);
+                    continue;
+                }
+            }
+            // 鏃營D鐨勬柊澧為」
+            item.setId(null);
+            item.setCreateTime(LocalDateTime.now());
+            reportOutlineItemService.save(item);
         }
-        reportOutlineItemService.saveBatch(items);
         renumberAndSave(reportId);
         return getOutline(reportId);
     }
@@ -203,15 +245,84 @@ public class ReportOutlineServiceImpl implements ReportOutlineService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public List<ReportOutlineItem> moveItem(Long reportId, Long itemId, Integer sort, Long parentId) {
         ReportOutlineItem item = getItem(itemId);
-        if (!reportId.equals(item.getReportId())) {
-            throw new BizException("大纲项不属于该报告");
+        if (sort == null) {
+            throw new BizException("目标排序位置不能为空");
         }
-        item.setSort(sort == null ? item.getSort() : sort);
-        item.setParentId(parentId == null ? 0L : parentId);
-        item.setUpdateTime(LocalDateTime.now());
-        reportOutlineItemService.updateById(item);
+
+        // 获取同一父节点下所有兄弟项（包含当前项）
+        Long targetParentId = parentId == null ? 0L : parentId;
+        List<ReportOutlineItem> siblings = reportOutlineItemService.list(
+                new LambdaQueryWrapper<ReportOutlineItem>()
+                        .eq(ReportOutlineItem::getReportId, reportId)
+                        .eq(ReportOutlineItem::getParentId, targetParentId)
+                        .orderByAsc(ReportOutlineItem::getSort)
+                        .orderByAsc(ReportOutlineItem::getId)
+        );
+
+        // 找到当前项在兄弟列表中的索引
+        int currentIdx = -1;
+        for (int i = 0; i < siblings.size(); i++) {
+            if (siblings.get(i).getId().equals(itemId)) {
+                currentIdx = i;
+                break;
+            }
+        }
+
+        if (currentIdx >= 0) {
+            // 计算目标索引：下移(sort增大)或上移(sort减小)
+            // 用 currentIdx 计算方向：sort > (currentIdx+1) 表示下移，sort < (currentIdx+1) 表示上移
+            int targetIdx;
+            if (sort > currentIdx + 1) {
+                // 下移
+                targetIdx = currentIdx + 1;
+            } else if (sort < currentIdx + 1) {
+                // 上移
+                targetIdx = currentIdx - 1;
+            } else {
+                // 位置不变
+                return getOutline(reportId);
+            }
+
+            // 限制在有效范围内
+            targetIdx = Math.max(0, Math.min(targetIdx, siblings.size() - 1));
+
+            if (targetIdx == currentIdx) {
+                return getOutline(reportId);
+            }
+
+            // 从列表中移除当前项
+            siblings.remove(currentIdx);
+
+            // 计算在移除后的列表中的插入位置
+            int insertIdx = targetIdx;
+            if (targetIdx > currentIdx) {
+                insertIdx = targetIdx; // 下移：移除后目标位置往前移了一位
+            }
+
+            // 把当前项插入到目标位置
+            siblings.add(insertIdx, item);
+
+            // 重新分配所有项的sort值
+            for (int i = 0; i < siblings.size(); i++) {
+                ReportOutlineItem sib = siblings.get(i);
+                int newSortVal = i + 1;
+                if (!Integer.valueOf(newSortVal).equals(sib.getSort())) {
+                    sib.setSort(newSortVal);
+                    sib.setUpdateTime(LocalDateTime.now());
+                    reportOutlineItemService.updateById(sib);
+                }
+            }
+        } else {
+            // 当前项不在同级列表中（可能改变了父节点），直接插入
+            item.setSort(sort);
+            item.setParentId(targetParentId);
+            item.setUpdateTime(LocalDateTime.now());
+            reportOutlineItemService.updateById(item);
+        }
+
         renumberAndSave(reportId);
         return getOutline(reportId);
     }

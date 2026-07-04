@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <article class="markdown-preview" v-html="html"></article>
 </template>
 
@@ -71,4 +71,3 @@ function escapeHtml(value) {
     .replace(/'/g, '&#039;');
 }
 </script>
-

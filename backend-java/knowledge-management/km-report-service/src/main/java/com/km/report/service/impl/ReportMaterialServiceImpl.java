@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.km.report.common.exception.BizException;
+import com.km.report.config.ReportExportProperties;
 import com.km.report.dto.MaterialQueryDTO;
 import com.km.report.dto.UploadMaterialRequest;
 import com.km.report.entity.ReportMaterial;
@@ -26,6 +27,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -42,6 +45,9 @@ public class ReportMaterialServiceImpl extends ServiceImpl<ReportMaterialMapper,
 
     @Resource
     private ReportAccessService reportAccessService;
+
+    @Resource
+    private ReportExportProperties reportExportProperties;
 
     @Override
     public Page<ReportMaterial> pageMaterials(MaterialQueryDTO queryDTO) {
@@ -91,21 +97,26 @@ public class ReportMaterialServiceImpl extends ServiceImpl<ReportMaterialMapper,
 
     @Override
     public ReportMaterial parseMaterial(Long materialId) {
-        ReportMaterial material = reportAccessService.requireOwnedMaterial(materialId);
+        ReportMaterial material = this.getById(materialId);
+        if (material == null) {
+            throw new BizException("素材不存在");
+        }
+        File file = new File(reportExportProperties.getBaseDir(), material.getFilePath());
+        if (!file.exists()) {
+            throw new BizException("素材文件不存在");
+        }
         try {
             String structuredData;
-            try (InputStream inputStream = reportFileStorageService.open(material.getBucket(), material.getObjectKey())) {
-                if ("csv".equalsIgnoreCase(material.getFileExt())) {
-                    structuredData = parseCsv(inputStream);
-                } else if ("xlsx".equalsIgnoreCase(material.getFileExt())) {
-                    structuredData = parseXlsx(inputStream);
-                } else if ("txt".equalsIgnoreCase(material.getFileExt())) {
-                    structuredData = parseTxt(inputStream);
-                } else if ("docx".equalsIgnoreCase(material.getFileExt())) {
-                    structuredData = parseDocx(inputStream);
-                } else {
-                    structuredData = "{\"type\":\"file\",\"message\":\"暂不支持该文件类型自动解析\"}";
-                }
+            if ("csv".equalsIgnoreCase(material.getFileExt())) {
+                structuredData = parseCsv(file);
+            } else if ("xlsx".equalsIgnoreCase(material.getFileExt())) {
+                structuredData = parseXlsx(file);
+            } else if ("txt".equalsIgnoreCase(material.getFileExt())) {
+                structuredData = parseTxt(file);
+            } else if ("docx".equalsIgnoreCase(material.getFileExt())) {
+                structuredData = parseDocx(file);
+            } else {
+                structuredData = "{\"type\":\"file\",\"message\":\"暂不支持该文件类型自动解析\"}";
             }
             material.setStructuredData(structuredData);
             material.setParseStatus("SUCCESS");
@@ -118,9 +129,9 @@ public class ReportMaterialServiceImpl extends ServiceImpl<ReportMaterialMapper,
         return material;
     }
 
-    private String parseCsv(InputStream inputStream) throws Exception {
+    private String parseCsv(File file) throws Exception {
         List<String> rows;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
             rows = reader.lines().collect(Collectors.toList());
         }
         StringBuilder builder = new StringBuilder();
@@ -140,8 +151,8 @@ public class ReportMaterialServiceImpl extends ServiceImpl<ReportMaterialMapper,
         return builder.toString();
     }
 
-    private String parseXlsx(InputStream inputStream) throws Exception {
-        try (Workbook workbook = new XSSFWorkbook(inputStream)) {
+    private String parseXlsx(File file) throws Exception {
+        try (Workbook workbook = new XSSFWorkbook(new FileInputStream(file))) {
             DataFormatter formatter = new DataFormatter();
             Sheet sheet = workbook.getSheetAt(0);
             List<List<String>> rows = new ArrayList<>();
@@ -176,15 +187,15 @@ public class ReportMaterialServiceImpl extends ServiceImpl<ReportMaterialMapper,
         }
     }
 
-    private String parseTxt(InputStream inputStream) throws Exception {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+    private String parseTxt(File file) throws Exception {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
             String text = reader.lines().limit(300).collect(Collectors.joining("\n"));
             return "{\"type\":\"text\",\"content\":\"" + escapeJson(text) + "\"}";
         }
     }
 
-    private String parseDocx(InputStream inputStream) throws Exception {
-        try (XWPFDocument document = new XWPFDocument(inputStream)) {
+    private String parseDocx(File file) throws Exception {
+        try (XWPFDocument document = new XWPFDocument(new FileInputStream(file))) {
             String text = document.getParagraphs().stream()
                     .map(XWPFParagraph::getText)
                     .filter(StringUtils::hasText)

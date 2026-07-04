@@ -5,6 +5,7 @@ import com.km.report.dto.AiConfigVO;
 import com.km.report.entity.ReportSystemConfig;
 import com.km.report.service.ReportAiService;
 import com.km.report.service.ReportSystemConfigService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,14 +23,20 @@ public class ReportAiConfigController {
     private ReportSystemConfigService reportSystemConfigService;
     @Resource
     private ReportAiService reportAiService;
+    @Value("${report.llm.base-url:${REPORT_LLM_BASE_URL:}}")
+    private String configuredBaseUrl;
+    @Value("${report.llm.model:${REPORT_LLM_MODEL:gpt-4o-mini}}")
+    private String configuredModel;
+    @Value("${report.llm.api-key:${REPORT_LLM_API_KEY:}}")
+    private String configuredApiKey;
 
     @GetMapping("/config")
     public ApiResult<AiConfigVO> getConfig() {
         AiConfigVO vo = new AiConfigVO();
         vo.setEnabled(reportAiService.enabled());
-        vo.setBaseUrl(reportSystemConfigService.getValueByKey("report.llm.base-url", ""));
-        vo.setModel(reportSystemConfigService.getValueByKey("report.llm.model", "gpt-4o-mini"));
-        String apiKey = reportSystemConfigService.getValueByKey("report.llm.api-key", "");
+        vo.setBaseUrl(firstText(reportSystemConfigService.getValueByKey("report.llm.base-url", ""), configuredBaseUrl));
+        vo.setModel(firstText(reportSystemConfigService.getValueByKey("report.llm.model", ""), configuredModel, "gpt-4o-mini"));
+        String apiKey = firstText(reportSystemConfigService.getValueByKey("report.llm.api-key", ""), configuredApiKey);
         vo.setApiKeyMasked(mask(apiKey));
         return ApiResult.ok(vo);
     }
@@ -66,5 +73,17 @@ public class ReportAiConfigController {
             return apiKey == null ? "" : "***";
         }
         return apiKey.substring(0, 4) + "***" + apiKey.substring(apiKey.length() - 4);
+    }
+
+    private String firstText(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (value != null && value.trim().length() > 0) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 }
