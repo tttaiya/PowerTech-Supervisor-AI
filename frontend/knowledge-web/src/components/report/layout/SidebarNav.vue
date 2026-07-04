@@ -1,10 +1,9 @@
 ﻿<template>
   <aside class="sidebar-nav">
     <div class="sidebar-brand">
-      <div class="brand-mark">电技</div>
+      <button type="button" class="brand-mark brand-back" @click="emit('go-chat')">电技</button>
       <div class="brand-copy">
         <strong>电力技术监督智能辅助平台</strong>
-        
       </div>
     </div>
 
@@ -33,7 +32,7 @@ defineProps({
   }
 });
 
-const emit = defineEmits(['select']);
+const emit = defineEmits(['select', 'go-chat']);
 
 const items = [
   { key: 'dashboard', label: '工作台', icon: '⌂' },
@@ -73,6 +72,11 @@ const items = [
   color: #06111f;
   font-weight: 900;
   box-shadow: 0 0 20px rgba(55, 242, 177, 0.28);
+}
+
+.brand-back {
+  border: 0;
+  cursor: pointer;
 }
 
 .brand-copy {
@@ -155,6 +159,3 @@ const items = [
   font-weight: 600;
 }
 </style>
-
-
-
