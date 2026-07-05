@@ -132,6 +132,9 @@ const chartEl = ref<HTMLDivElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let resizeHandler: (() => void) | null = null
+let resizeObserver: ResizeObserver | null = null
+let renderFrame: number | null = null
+let renderTimer: ReturnType<typeof setTimeout> | null = null
 
 const hasTrendData = computed(() => (overview.value?.documentTrend?.length ?? 0) > 0)
 
@@ -282,9 +285,36 @@ function ensureChartInstance(): echarts.ECharts | null {
 }
 
 function renderChart() {
+  if (!chartEl.value || !overview.value) return
+  if (chartEl.value.clientWidth <= 0 || chartEl.value.clientHeight <= 0) return
+
   const inst = ensureChartInstance()
-  if (!inst || !overview.value) return
+  if (!inst) return
+  inst.resize()
   inst.setOption(buildChartOption(overview.value), { notMerge: true })
+  inst.resize()
+}
+
+function scheduleRenderChart() {
+  if (renderFrame !== null) {
+    window.cancelAnimationFrame(renderFrame)
+    renderFrame = null
+  }
+  if (renderTimer) {
+    clearTimeout(renderTimer)
+    renderTimer = null
+  }
+
+  nextTick(() => {
+    renderFrame = window.requestAnimationFrame(() => {
+      renderFrame = null
+      renderChart()
+      renderTimer = setTimeout(() => {
+        renderTimer = null
+        renderChart()
+      }, 80)
+    })
+  })
 }
 
 function disposeChart() {
@@ -301,8 +331,7 @@ async function reload() {
     const data = await fetchStatsOverview(30)
     overview.value = data
     lastUpdatedAt.value = new Date()
-    await nextTick()
-    renderChart()
+    scheduleRenderChart()
   } catch (err: any) {
     const msg = err?.response?.data?.message || err?.message || '加载统计概览失败'
     errorMessage.value = `加载失败：${msg}`
@@ -327,8 +356,12 @@ function stopPolling() {
 
 onMounted(async () => {
   // 监听窗口尺寸变化，确保图表自适应
-  resizeHandler = () => chartInstance?.resize()
+  resizeHandler = () => scheduleRenderChart()
   window.addEventListener('resize', resizeHandler)
+  if (chartEl.value && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => scheduleRenderChart())
+    resizeObserver.observe(chartEl.value)
+  }
 
   await reload()
   startPolling()
@@ -337,7 +370,7 @@ onMounted(async () => {
 // 数据变化时重绘（例如轮询拿到新数据）
 watch(overview, () => {
   if (overview.value) {
-    nextTick(renderChart)
+    scheduleRenderChart()
   }
 })
 
@@ -346,6 +379,18 @@ onBeforeUnmount(() => {
   if (resizeHandler) {
     window.removeEventListener('resize', resizeHandler)
     resizeHandler = null
+  }
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+  if (renderFrame !== null) {
+    window.cancelAnimationFrame(renderFrame)
+    renderFrame = null
+  }
+  if (renderTimer) {
+    clearTimeout(renderTimer)
+    renderTimer = null
   }
   disposeChart()
 })
