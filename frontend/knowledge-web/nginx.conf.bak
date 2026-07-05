@@ -1,0 +1,113 @@
+events {
+  worker_connections 1024;
+}
+
+http {
+  # 单文件最大 50MB（v4 设计文档：单文件最大 50MB；knowledge-web 走 chunk 提交）
+  client_max_body_size 500m;
+
+  # Docker 内置 DNS。前端容器重建后 IP 会变，使用变量代理可避免 Nginx 缓存旧 upstream IP。
+  resolver 127.0.0.11 valid=10s ipv6=off;
+
+  # 智慧问答 / 知识检索的统一入口（Spring Cloud Gateway）
+  upstream gateway {
+    server gateway-service:9000;
+  }
+
+  # 智慧问答静态页面与静态资源
+  upstream super-biz-agent {
+    server super-biz-agent-service:9900;
+  }
+
+  # 知识管理 Vue 子应用（R18）
+  server {
+    listen 80;
+    server_name _;
+
+    set $knowledge_web "knowledge-web:80";
+
+    # R18：知识管理前端 SPA
+    # 浏览器访问路径：/knowledge/bases, /knowledge/bases/1/documents 等
+    # Nginx 去掉 /knowledge/ 前缀转发到 knowledge-web:80
+    location /knowledge/ {
+      rewrite ^/knowledge/(.*)$ /$1 break;
+      proxy_pass http://$knowledge_web;
+      proxy_http_version 1.1;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 知识管理前端静态资源直接走（防止 SPA 内部跳转被截断）
+    location /knowledge {
+      return 301 /knowledge/;
+    }
+
+    # R21：报告生成前端 SPA
+    # 浏览器访问路径保持 /reports/，Nginx 去掉 /reports/ 前缀转发到同一个 knowledge-web 容器
+    location /reports/ {
+      rewrite ^/reports/(.*)$ /$1 break;
+      proxy_pass http://$knowledge_web;
+      proxy_http_version 1.1;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /reports {
+      return 301 /reports/;
+    }
+
+    # 小组总展示页：独立 SPA 路由，答辩可直接访问 /team-showcase。
+    location /team-showcase {
+      proxy_pass http://$knowledge_web;
+      proxy_http_version 1.1;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 智慧问答静态资源显式直连，避免再依赖 / 的兜底转发
+    location /static/ {
+      proxy_pass http://super-biz-agent/static/;
+      proxy_http_version 1.1;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # knowledge-web 构建产物静态资源。/knowledge/ 与 /reports/ 共用同一份 SPA。
+    location /assets/ {
+      proxy_pass http://$knowledge_web;
+      proxy_http_version 1.1;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # F4 整合（commit #25 安全）：显式拒绝 /internal/ai/* 路径
+    # 即便未来 gateway 加 fastapi 路由也不允许经 Nginx 对外暴露
+    # Worker 通过 docker 内部网络直接访问 fastapi-ai-service:8000，无需经过 Nginx
+    location ~ ^/internal/ai(/|$) {
+      return 404;
+    }
+
+    # 统一入口：智慧问答 / 知识检索 API / 内部调用
+    location / {
+      proxy_pass http://gateway;
+      proxy_http_version 1.1;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header Connection "";
+      proxy_buffering off;
+      proxy_cache off;
+    }
+  }
+}

@@ -30,9 +30,11 @@ defineProps({
   min-height: 128px;
   padding: 18px 20px;
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(13, 24, 44, 0.92) 0%, rgba(8, 15, 29, 0.96) 100%);
-  border: 1px solid rgba(94, 179, 255, 0.2);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 28px rgba(61, 139, 255, 0.12);
+  background:
+    linear-gradient(150deg, rgba(79, 214, 154, 0.13), rgba(255, 255, 255, 0.035) 42%, rgba(255, 255, 255, 0.02)),
+    rgba(15, 28, 24, 0.78);
+  border: 1px solid var(--km-border-light);
+  box-shadow: var(--km-shadow-soft);
 }
 
 .metric-tile::before {
@@ -40,7 +42,7 @@ defineProps({
   position: absolute;
   inset: -1px;
   border-radius: inherit;
-  background: linear-gradient(135deg, rgba(55, 242, 177, 0.18), rgba(61, 139, 255, 0.08), transparent 65%);
+  background: linear-gradient(135deg, rgba(114, 239, 182, 0.18), rgba(113, 215, 255, 0.08), transparent 65%);
   pointer-events: none;
 }
 
@@ -64,13 +66,13 @@ defineProps({
   margin-top: 12px;
   font-size: 34px;
   line-height: 1;
-  color: #f6fbff;
-  text-shadow: 0 0 14px rgba(61, 139, 255, 0.28);
+  color: var(--km-ink);
+  text-shadow: 0 0 14px rgba(79, 214, 154, 0.18);
 }
 
 .metric-tile__hint {
   margin: 10px 0 0;
   font-size: 12px;
-  color: rgba(226, 238, 255, 0.72);
+  color: var(--pt-text-secondary);
 }
 </style>

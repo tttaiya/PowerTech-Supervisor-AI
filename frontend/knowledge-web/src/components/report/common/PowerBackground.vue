@@ -35,8 +35,8 @@ const particles = [
   overflow: hidden;
   pointer-events: none;
   background:
-    radial-gradient(circle at 20% 20%, rgba(55, 242, 177, 0.12), transparent 28%),
-    radial-gradient(circle at 80% 18%, rgba(61, 139, 255, 0.14), transparent 30%),
+    radial-gradient(circle at 18% 0%, rgba(79, 214, 154, 0.14), transparent 30%),
+    radial-gradient(circle at 92% 18%, rgba(113, 215, 255, 0.08), transparent 24%),
     linear-gradient(180deg, var(--pt-page-bg-soft), var(--pt-page-bg));
   z-index: 0;
 }
@@ -56,7 +56,7 @@ const particles = [
   height: 36vw;
   max-width: 520px;
   max-height: 520px;
-  background: radial-gradient(circle, rgba(55, 242, 177, 0.22), transparent 68%);
+  background: radial-gradient(circle, rgba(79, 214, 154, 0.22), transparent 68%);
 }
 
 .power-background__gradient--secondary {
@@ -66,7 +66,7 @@ const particles = [
   height: 42vw;
   max-width: 640px;
   max-height: 640px;
-  background: radial-gradient(circle, rgba(61, 139, 255, 0.22), transparent 68%);
+  background: radial-gradient(circle, rgba(113, 215, 255, 0.16), transparent 68%);
   animation-delay: -7s;
 }
 
@@ -94,7 +94,7 @@ const particles = [
   height: var(--size);
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.75);
-  box-shadow: 0 0 16px rgba(55, 242, 177, 0.55);
+  box-shadow: 0 0 16px rgba(114, 239, 182, 0.55);
   animation: power-background-rise var(--duration) linear infinite;
   animation-delay: var(--delay);
 }

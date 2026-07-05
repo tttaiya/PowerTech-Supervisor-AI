@@ -92,13 +92,19 @@ class RagAgentService:
         self.system_prompt = self._build_system_prompt()
 
 
-        self.model = ChatQwen(
-            model=self.model_name,
-            api_key=config.dashscope_api_key,
-            base_url=config.dashscope_api_base,
-            temperature=0.7,
-            streaming=streaming,
-        )
+        self.model = None
+        self.model_unavailable_reason = ""
+        if config.dashscope_api_key:
+            self.model = ChatQwen(
+                model=self.model_name,
+                api_key=config.dashscope_api_key,
+                base_url=config.dashscope_api_base,
+                temperature=0.7,
+                streaming=streaming,
+            )
+        else:
+            self.model_unavailable_reason = "DASHSCOPE_API_KEY 未配置，模型问答暂不可用"
+            logger.warning(self.model_unavailable_reason)
 
         # 定义普通问答可用的本地工具
         self.tools = list(DEFAULT_LOCAL_AGENT_TOOLS)
@@ -119,6 +125,8 @@ class RagAgentService:
         """异步初始化 Agent（包括 MCP 工具）"""
         if self._agent_initialized:
             return
+        if self.model is None:
+            raise RuntimeError(self.model_unavailable_reason or "模型未初始化")
 
         for name, server in config.mcp_servers.items():
             hint = suggest_mcp_transport(

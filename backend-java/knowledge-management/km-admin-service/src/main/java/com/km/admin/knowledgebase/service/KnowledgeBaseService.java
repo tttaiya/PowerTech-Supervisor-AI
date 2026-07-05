@@ -6,6 +6,7 @@ import com.km.admin.common.PageResult;
 import com.km.admin.knowledgebase.dto.BatchDeleteKnowledgeBaseRequest;
 import com.km.admin.knowledgebase.dto.CreateKnowledgeBaseRequest;
 import com.km.admin.knowledgebase.dto.QueryKnowledgeBaseRequest;
+import com.km.admin.knowledgebase.dto.SelectableKnowledgeBaseDTO;
 import com.km.admin.knowledgebase.dto.UpdateKnowledgeBaseRequest;
 import com.km.admin.knowledgebase.entity.KnowledgeBase;
 import com.km.admin.knowledgebase.mapper.KnowledgeBaseMapper;
@@ -189,6 +190,14 @@ public class KnowledgeBaseService {
             throw new IllegalArgumentException("知识库不存在：id=" + id);
         }
         return toDetailVO(kb);
+    }
+
+    /**
+     * 智能问答模块可选正式知识库列表。
+     * 当前阶段不做 userId 权限过滤，只保留参数以兼容后续扩展。
+     */
+    public List<SelectableKnowledgeBaseDTO> listSelectable(String userId) {
+        return kbMapper.listSelectable(userId);
     }
 
     // ============================================================

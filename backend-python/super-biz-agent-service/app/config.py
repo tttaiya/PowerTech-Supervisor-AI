@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # RAG 配置
     rag_top_k: int = 3
     rag_model: str = "qwen-max"  # 使用快速响应模型，不带扩展思考
+    km_internal_token: str = "demo-internal-token"
+    km_catalog_url: str = "http://gateway-service:9000/internal/km/knowledge-bases/selectable"
+    km_console_url: str = "/knowledge/bases"
     retrieval_search_url: str = "http://gateway-service:9000/internal/v1/retrieval/search"
     retrieval_request_timeout: float = 10.0
 

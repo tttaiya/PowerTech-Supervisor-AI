@@ -1,8 +1,12 @@
 <template>
   <header class="header-bar">
+    <button type="button" class="header-back" @click="emit('logout')">
+      <span>‹</span>
+      <strong>返回门户</strong>
+    </button>
     <div class="header-copy">
+      <span>Report Workspace</span>
       <strong>{{ title }}</strong>
-      <span v-if="subtitle">{{ subtitle }}</span>
     </div>
 
     <div class="header-actions">
@@ -11,7 +15,6 @@
       </el-tag>
       <el-tag effect="dark" class="status-tag">{{ userLabel }}</el-tag>
       <el-button size="small" :loading="loading" @click="emit('refresh-backend')">刷新后端</el-button>
-      <el-button size="small" @click="emit('logout')">退出</el-button>
     </div>
   </header>
 </template>
@@ -51,13 +54,14 @@ const emit = defineEmits(['refresh-backend', 'logout']);
 .header-bar {
   min-height: 72px;
   padding: 16px 24px;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(9, 15, 27, 0.76), rgba(12, 19, 34, 0.92));
+  gap: 16px;
+  border-bottom: 1px solid var(--km-border-light);
+  background: rgba(5, 10, 8, 0.62);
   backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
 }
 
 .header-copy strong,
@@ -65,16 +69,53 @@ const emit = defineEmits(['refresh-backend', 'logout']);
   display: block;
 }
 
+.header-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 14px 0 11px;
+  border: 1px solid var(--km-border-light);
+  border-radius: 999px;
+  color: var(--km-text);
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  transition:
+    transform 160ms var(--km-ease-out),
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.header-back span {
+  font-size: 21px;
+  line-height: 1;
+}
+
+.header-back strong {
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.header-back:hover {
+  color: var(--km-green-strong);
+  border-color: rgba(79, 214, 154, 0.34);
+  background: rgba(79, 214, 154, 0.1);
+  transform: translateY(-1px);
+}
+
 .header-copy strong {
-  color: #eef6ff;
-  font-size: 18px;
-  font-weight: 800;
+  margin-top: 2px;
+  color: var(--km-ink);
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .header-copy span {
-  margin-top: 4px;
-  color: #87a0c7;
-  font-size: 12px;
+  color: var(--km-faint);
+  font-size: 11px;
+  font-weight: 680;
+  text-transform: uppercase;
 }
 
 .header-actions {
@@ -86,7 +127,9 @@ const emit = defineEmits(['refresh-backend', 'logout']);
 }
 
 .status-tag {
-  border: 0;
+  border-color: rgba(193, 227, 212, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
 }
 </style>
 

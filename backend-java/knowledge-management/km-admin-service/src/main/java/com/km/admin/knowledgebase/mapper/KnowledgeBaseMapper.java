@@ -1,6 +1,7 @@
 package com.km.admin.knowledgebase.mapper;
 
 import com.km.admin.knowledgebase.entity.KnowledgeBase;
+import com.km.admin.knowledgebase.dto.SelectableKnowledgeBaseDTO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -33,6 +34,9 @@ public interface KnowledgeBaseMapper {
 
     /** 按 ID 列表批量查询（用于批量删除前置校验） */
     List<KnowledgeBase> listByIds(@Param("ids") List<Long> ids);
+
+    /** 问答可选正式知识库列表（后续可按 userId 补权限过滤）。 */
+    List<SelectableKnowledgeBaseDTO> listSelectable(@Param("userId") String userId);
 
     /** 插入一条，返回主键 id */
     int insert(KnowledgeBase kb);

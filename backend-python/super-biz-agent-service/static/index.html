@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能OnCall助手</title>
+    <title>智能问答工作台 | AI Knowledge Chat Workspace</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=20260704-ui-fix">
+    <link rel="stylesheet" href="/static/styles.css?v=20260705-final-ui">
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/es/highlight.min.js"></script>
@@ -19,6 +19,10 @@
     <div class="app-bg-orb orb-c"></div>
 
     <section class="login-screen" id="loginScreen">
+        <nav class="auth-top-nav" aria-label="登录页快捷入口">
+            <a href="http://localhost:8080/team-showcase">返回团队展示页</a>
+            <a href="http://localhost:8080/knowledge/bases">返回知识管理</a>
+        </nav>
         <div class="auth-shell">
             <div class="auth-overview">
                 <div class="auth-brand">
@@ -29,42 +33,46 @@
                         </svg>
                     </span>
                     <div>
-                        <strong>智能 OnCall 助手</strong>
-                        <span>Intelligent Incident Copilot</span>
+                        <strong>智能知识问答工作台</strong>
+                        <span>AI Knowledge Chat Workspace</span>
                     </div>
                 </div>
 
                 <div class="auth-copy">
-                    <span class="eyebrow">OPS CONSOLE</span>
-                    <h1>把告警处置、知识检索和对话分析放进同一个工作台。</h1>
-                    <p>延续你给的登录稿风格，我们把主界面也改成同一套深色玻璃质感，方便从认证页顺滑进入对话工作流。</p>
+                    <span class="eyebrow">AI KNOWLEDGE CHAT WORKSPACE</span>
+                    <h1>智能知识问答工作台</h1>
+                    <p>基于知识库召回、引用溯源与大模型生成，将企业知识转化为可直接使用的业务答案。</p>
                 </div>
 
                 <div class="auth-metric-row">
                     <div class="auth-metric-card">
-                        <span>模式</span>
+                        <span>能力</span>
                         <strong>Knowledge RAG</strong>
                     </div>
                     <div class="auth-metric-card">
-                        <span>状态</span>
-                        <strong>System Ready</strong>
+                        <span>溯源</span>
+                        <strong>Source Citation</strong>
                     </div>
                     <div class="auth-metric-card">
-                        <span>体验</span>
-                        <strong>Chat + Admin</strong>
+                        <span>工作台</span>
+                        <strong>Chat Workspace</strong>
+                    </div>
+                    <div class="auth-metric-card">
+                        <span>管理</span>
+                        <strong>Report Bridge</strong>
                     </div>
                 </div>
 
                 <div class="auth-feature-list">
                     <div class="auth-feature-card">
                         <span class="auth-feature-kicker">01</span>
-                        <h2>知识问答</h2>
-                        <p>将资料检索、引用展示和答案生成整合到一个连续会话中。</p>
+                        <h2>知识召回</h2>
+                        <p>从企业知识库中召回相关片段，并保留引用、章节和相似度信息。</p>
                     </div>
                     <div class="auth-feature-card">
                         <span class="auth-feature-kicker">02</span>
-                        <h2>过程可视化</h2>
-                        <p>保留执行过程、引用详情和历史会话，方便回看与复盘。</p>
+                        <h2>对话分析</h2>
+                        <p>围绕多轮问题组织上下文，把检索结果转成可直接使用的业务答案。</p>
                     </div>
                 </div>
             </div>
@@ -73,7 +81,7 @@
                 <div class="auth-card-header">
                     <span class="eyebrow">SECURE ACCESS</span>
                     <h2>欢迎回来</h2>
-                    <p>登录后进入你的 OnCall 对话工作台。</p>
+                    <p>登录后进入智能问答与知识分析工作台。</p>
                 </div>
 
                 <div class="auth-form">
@@ -84,7 +92,7 @@
                                 <path d="M20 21V19C20 16.8 18.2 15 16 15H8C5.8 15 4 16.8 4 19V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
                                 <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"></circle>
                             </svg>
-                            <input class="login-input" id="usernameInput" placeholder="operator@power-grid.cn" autocomplete="username">
+                            <input class="login-input" id="usernameInput" placeholder="请输入用户名" autocomplete="username">
                         </div>
                     </label>
 
@@ -127,8 +135,8 @@
                             </svg>
                         </span>
                         <div>
-                            <h2 class="sidebar-title">智能OnCall助手</h2>
-                            <p class="sidebar-subtitle">Incident Workspace</p>
+                            <h2 class="sidebar-title">智能知识问答工作台</h2>
+                            <p class="sidebar-subtitle">AI Knowledge Chat Workspace</p>
                         </div>
                     </div>
                 </div>
@@ -142,14 +150,56 @@
                 </div>
 
                 <div class="workspace-shortcuts" aria-label="业务快捷入口">
-                    <a class="workspace-nav-button" href="http://localhost:8080/knowledge/">
+                    <a class="workspace-nav-button" href="http://localhost:8080/knowledge/bases">
                         <span class="workspace-nav-button__label">知识管理</span>
                         <span class="workspace-nav-button__meta">进入知识库与文档工作台</span>
                     </a>
-                    <a class="workspace-nav-button workspace-nav-button--secondary" href="http://localhost:8080/reports/">
-                        <span class="workspace-nav-button__label">报告生成</span>
-                        <span class="workspace-nav-button__meta">跳转到报告生成页面</span>
+                    <a class="workspace-nav-button" href="http://localhost:8080/knowledge/search">
+                        <span class="workspace-nav-button__label">知识检索</span>
+                        <span class="workspace-nav-button__meta">查看召回切片和检索结果</span>
                     </a>
+                    <a class="workspace-nav-button workspace-nav-button--secondary" href="http://localhost:8080/reports/">
+                        <span class="workspace-nav-button__label">报告工作台</span>
+                        <span class="workspace-nav-button__meta">基于回答继续编辑报告</span>
+                    </a>
+                    <a class="workspace-nav-button" href="http://localhost:8080/team-showcase">
+                        <span class="workspace-nav-button__label">团队展示</span>
+                        <span class="workspace-nav-button__meta">查看团队与项目展示入口</span>
+                    </a>
+                </div>
+
+                <div class="knowledge-scope-panel" aria-label="知识库范围与检索配置">
+                    <div class="scope-panel-head">
+                        <span>KNOWLEDGE SCOPE</span>
+                        <strong>会话与知识范围</strong>
+                    </div>
+                    <label class="scope-field">
+                        <span>知识库范围</span>
+                        <select disabled>
+                            <option>由后端检索策略自动选择</option>
+                        </select>
+                    </label>
+                    <label class="scope-field">
+                        <span>检索模式</span>
+                        <select disabled>
+                            <option>语义召回 + 上下文增强</option>
+                        </select>
+                    </label>
+                    <div class="scope-mini-grid">
+                        <div>
+                            <span>Top K</span>
+                            <strong>Auto</strong>
+                        </div>
+                        <div>
+                            <span>阈值</span>
+                            <strong>Auto</strong>
+                        </div>
+                    </div>
+                    <label class="scope-check">
+                        <input type="checkbox" checked disabled>
+                        <span>显示来源引用</span>
+                    </label>
+                    <p>当前配置仅用于展示，真实召回参数由问答接口保持原逻辑处理。</p>
                 </div>
 
                 <div class="sidebar-content">
@@ -176,39 +226,93 @@
             <div class="workspace-shell">
                 <header class="workspace-header">
                     <div class="workspace-heading">
-                        <span class="eyebrow">CHAT CONSOLE</span>
-                        <h1>对话工作台</h1>
-                        <p id="workspaceStatus">知识问答、引用追踪与历史对话已就绪</p>
+                        <span class="eyebrow">AI KNOWLEDGE CHAT WORKSPACE</span>
+                        <h1>智能知识问答工作台</h1>
+                        <p id="workspaceStatus">基于知识库召回、引用溯源和上下文增强的智能问答工作台</p>
                     </div>
                     <div class="workspace-header-actions">
                         <div class="workspace-chip">
                             <span class="status-dot"></span>
                             <span>Connected</span>
                         </div>
+                        <button class="admin-top-link" id="heroNewChatBtn" type="button">新建会话</button>
+                        <a class="admin-top-link" href="http://localhost:8080/knowledge/bases">返回知识管理</a>
+                        <a class="admin-top-link" href="http://localhost:8080/knowledge/search">知识检索</a>
+                        <a class="admin-top-link" href="http://localhost:8080/reports/">报告工作台</a>
+                        <a class="admin-top-link" href="http://localhost:8080/team-showcase">团队展示</a>
                         <a class="admin-top-link" id="adminLink" href="/static/admin.html">后台</a>
                     </div>
                 </header>
 
+                <div class="workspace-hero-chips" aria-label="智能问答能力">
+                    <span>知识召回</span>
+                    <span>多轮对话</span>
+                    <span>来源引用</span>
+                    <span>上下文增强</span>
+                    <span>报告联动</span>
+                </div>
+
+                <section class="qa-metric-grid" aria-label="问答能力指标">
+                    <article class="qa-metric-card">
+                        <span>当前会话</span>
+                        <strong id="sessionMetric">未开始</strong>
+                        <small>登录后自动接入会话上下文</small>
+                    </article>
+                    <article class="qa-metric-card">
+                        <span>引用来源</span>
+                        <strong id="citationMetric">0</strong>
+                        <small>取自当前回答真实 citations</small>
+                    </article>
+                    <article class="qa-metric-card">
+                        <span>检索状态</span>
+                        <strong id="retrievalStatusMetric">待提问</strong>
+                        <small>随问答生成过程自动变化</small>
+                    </article>
+                    <article class="qa-metric-card">
+                        <span>报告联动</span>
+                        <strong id="reportBridgeMetric">可跳转</strong>
+                        <small>继续进入报告工作台编辑</small>
+                    </article>
+                </section>
+
                 <div class="chat-container" id="chatWorkspace">
-                    <div class="welcome-greeting" id="welcomeGreeting">
-                        <span class="welcome-kicker">SMART RESPONSE CENTER</span>
-                        <p>从这里开始一次新的值班问答</p>
-                        <small>输入告警、排障问题或知识库查询需求，系统会结合检索结果与引用切片返回答案。</small>
+                    <div class="welcome-greeting command-deck" id="welcomeGreeting">
+                        <div class="command-node" aria-hidden="true">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                        <span class="welcome-kicker">AI COMMAND DECK</span>
+                        <p>开始一次知识问答</p>
+                        <small>系统会从知识库召回相关片段，组织上下文，并生成带引用溯源的答案。</small>
+                        <button class="welcome-start-btn" id="startQuestionBtn" type="button">聚焦输入控制台</button>
                     </div>
 
                     <div class="chat-messages" id="chatMessages"></div>
 
                     <div class="chat-input-container">
+                        <div class="command-process" id="inputProcessBar" aria-hidden="true">
+                            <span><i></i>召回知识片段</span>
+                            <span><i></i>组织上下文</span>
+                            <span><i></i>生成答案</span>
+                        </div>
+                        <div class="prompt-chip-row" aria-label="推荐问题">
+                            <button class="prompt-chip" type="button" data-prompt="请总结当前知识库中的安全阀要求">请总结当前知识库中的安全阀要求</button>
+                            <button class="prompt-chip" type="button" data-prompt="文档中关于运行维护有哪些规定？">文档中关于运行维护有哪些规定？</button>
+                            <button class="prompt-chip" type="button" data-prompt="帮我提炼这份规程的检查要点">帮我提炼这份规程的检查要点</button>
+                            <button class="prompt-chip" type="button" data-prompt="哪些内容适合写入报告？">哪些内容适合写入报告？</button>
+                        </div>
                         <div class="input-group-wrapper">
                             <div class="input-wrapper">
                                 <div class="input-topline">
-                                    <span class="input-mode-pill">RAG Copilot</span>
-                                    <span class="input-hint">Shift + Enter 换行</span>
+                                    <span class="input-mode-pill">RAG COPILOT</span>
+                                    <span class="input-hint">Enter 发送 / Shift+Enter 换行</span>
                                 </div>
-                                <textarea id="messageInput" placeholder="问问智能OnCall助手" maxlength="1000" class="message-input" rows="1"></textarea>
+                                <textarea id="messageInput" placeholder="输入问题，Enter 发送，Shift + Enter 换行" maxlength="1000" class="message-input" rows="1"></textarea>
                                 <div class="input-bottom-bar">
-                                    <div class="input-caption">支持运维问答、故障分析、知识检索与引用查看</div>
+                                    <div class="input-caption">知识范围 Auto · 引用展示 On · 报告联动 Ready</div>
                                     <div class="right-actions">
+                                        <a class="report-link-btn" href="http://localhost:8080/reports/" title="请在报告工作台继续编辑">生成报告草稿</a>
                                         <button class="send-btn-circle" id="sendButton" title="发送" type="button">
                                             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                                 <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
@@ -222,13 +326,70 @@
                 </div>
             </div>
         </main>
+
+        <aside class="evidence-sidebar" aria-label="引用来源与检索证据">
+            <section class="evidence-card evidence-card--status">
+                <span class="eyebrow">RETRIEVAL EVIDENCE</span>
+                <h2>来源引用</h2>
+                <p id="citationPanelStatus">当前回答暂无可展示引用来源</p>
+                <div class="evidence-meter">
+                    <span id="citationCount">0</span>
+                    <small>命中片段</small>
+                </div>
+            </section>
+
+            <section class="evidence-card evidence-stage-card">
+                <div class="evidence-stage active">
+                    <span></span>
+                    <strong>召回知识片段</strong>
+                </div>
+                <div class="evidence-stage">
+                    <span></span>
+                    <strong>组织上下文</strong>
+                </div>
+                <div class="evidence-stage">
+                    <span></span>
+                    <strong>生成业务答案</strong>
+                </div>
+            </section>
+
+            <section class="evidence-card evidence-list-card">
+                <div class="evidence-list-header">
+                    <strong>检索证据</strong>
+                    <a href="http://localhost:8080/knowledge/search">前往检索</a>
+                </div>
+                <div class="evidence-empty" id="citationEmpty">
+                    <span></span>
+                    <p>当前回答暂无可展示引用来源</p>
+                    <small>提问后系统会在这里展示召回的知识片段、文档页码和相似度。</small>
+                </div>
+                <div class="evidence-list" id="citationPanelList"></div>
+            </section>
+
+            <section class="evidence-card report-bridge-card">
+                <span class="eyebrow">REPORT BRIDGE</span>
+                <h2>问答与报告联动</h2>
+                <p>将本次回答沉淀为报告内容时，请在报告工作台继续编辑、补充章节与导出。</p>
+                <a href="http://localhost:8080/reports/">前往报告工作台</a>
+                <a href="http://localhost:8080/knowledge/search">关联知识检索</a>
+            </section>
+        </aside>
     </div>
 
     <div id="loadingOverlay" class="loading-overlay">
         <div class="loading-content">
             <div class="loading-spinner"></div>
-            <div class="loading-text">智能运维分析中，请稍候...</div>
+            <div class="loading-text">智能知识问答生成中，请稍候...</div>
             <div class="loading-subtext">后端正在处理，请耐心等待</div>
+        </div>
+    </div>
+
+    <div class="route-transition" id="routeTransition" hidden aria-live="polite" aria-atomic="true">
+        <div class="route-transition__blade"></div>
+        <div class="route-transition__panel">
+            <span class="route-transition__kicker">WORKSPACE TRANSFER</span>
+            <strong id="routeTransitionTitle">正在切换工作台</strong>
+            <small>正在建立目标模块上下文</small>
         </div>
     </div>
 
@@ -268,6 +429,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=20260704-ui-fix"></script>
+    <script src="/static/app.js?v=20260705-final-ui"></script>
 </body>
 </html>

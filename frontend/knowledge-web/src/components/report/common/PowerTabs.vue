@@ -20,6 +20,6 @@
 .power-tabs :deep(.el-tabs__active-bar) {
   height: 3px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #37f2b1, #3d8bff);
+  background: linear-gradient(90deg, var(--km-green-strong), var(--km-cyan));
 }
 </style>

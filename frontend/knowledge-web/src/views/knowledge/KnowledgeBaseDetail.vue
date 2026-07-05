@@ -62,7 +62,7 @@
               <el-button type="primary" @click="goDocuments">进入文档</el-button>
               <el-button @click="goReview">前往审核</el-button>
               <el-button @click="goSearch">开始检索</el-button>
-              <el-button type="warning" plain @click="confirmReprocess">策略变更</el-button>
+              <el-button type="warning" plain @click="openEdit">策略变更</el-button>
             </div>
           </article>
         </section>
@@ -147,7 +147,7 @@ import {
   KB_RETRIEVAL_STRATEGIES,
 } from '@/types/knowledge-base'
 import KnowledgeBaseFormDialog from '@/components/knowledge/KnowledgeBaseFormDialog.vue'
-import { friendlyErrorMessage } from '@/utils/error'
+import { friendlyEnvelopeMessage, friendlyErrorMessage } from '@/utils/error'
 
 const route = useRoute()
 const router = useRouter()
@@ -168,7 +168,7 @@ async function fetchDetail() {
   try {
     const resp = await getKnowledgeBaseDetail(kbId.value)
     if (resp.code !== 0) {
-      ElMessage.error(resp.message || '加载知识库详情失败')
+      ElMessage.error(friendlyEnvelopeMessage(resp.message, '加载知识库详情失败'))
       detail.value = null
       return
     }
@@ -229,12 +229,16 @@ async function confirmDelete() {
   } catch {
     return
   }
-  const resp = await deleteKnowledgeBase(kbId.value)
-  if (resp.code === 0) {
-    ElMessage.success('已删除')
-    goBack()
-  } else {
-    ElMessage.error(resp.message || '删除失败')
+  try {
+    const resp = await deleteKnowledgeBase(kbId.value)
+    if (resp.code === 0) {
+      ElMessage.success('知识库已删除')
+      goBack()
+    } else {
+      ElMessage.error(friendlyEnvelopeMessage(resp.message, '删除失败，请稍后重试'))
+    }
+  } catch (error) {
+    ElMessage.error(friendlyErrorMessage(error, '删除失败，请稍后重试'))
   }
 }
 
@@ -249,11 +253,16 @@ async function confirmReprocess() {
   } catch {
     return
   }
-  const resp = await reprocessKnowledgeBase(kbId.value)
-  if (resp.code === 0) {
-    ElMessage.success(resp.data.message || '已触发策略变更')
-  } else {
-    ElMessage.error(resp.message || '触发失败')
+  try {
+    const resp = await reprocessKnowledgeBase(kbId.value)
+    if (resp.code === 0) {
+      ElMessage.success(resp.data.message || '已触发策略重处理')
+      await fetchDetail()
+    } else {
+      ElMessage.error(friendlyEnvelopeMessage(resp.message, '触发失败'))
+    }
+  } catch (error) {
+    ElMessage.error(friendlyErrorMessage(error, '触发失败'))
   }
 }
 

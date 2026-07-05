@@ -11,6 +11,9 @@ import type { RouteRecordRaw } from 'vue-router'
  * 后端 Gateway 仍是最终鉴权入口，前端守卫只负责用户体验。
  */
 const isReportEntry = typeof window !== 'undefined' && window.location.pathname.startsWith('/reports')
+const isShowcaseEntry =
+  typeof window !== 'undefined' &&
+  (window.location.pathname.startsWith('/showcase') || window.location.pathname.startsWith('/team-showcase'))
 
 const knowledgeRoutes: RouteRecordRaw[] = [
   {
@@ -62,6 +65,18 @@ const knowledgeRoutes: RouteRecordRaw[] = [
     component: () => import('@/views/knowledge/StatisticsPage.vue'),
   },
   {
+    path: '/showcase',
+    name: 'KnowledgeShowcaseInApp',
+    component: () => import('@/views/showcase/KnowledgeShowcase.vue'),
+    meta: { fullscreen: true, public: true },
+  },
+  {
+    path: '/team-showcase',
+    name: 'TeamShowcaseInApp',
+    component: () => import('@/views/showcase/TeamShowcase.vue'),
+    meta: { fullscreen: true, public: true },
+  },
+  {
     path: '/reports',
     name: 'ReportWorkspace',
     component: () => import('@/views/report/ReportWorkspace.vue'),
@@ -87,24 +102,39 @@ const reportRoutes: RouteRecordRaw[] = [
   },
 ]
 
+const showcaseRoutes: RouteRecordRaw[] = [
+  {
+    path: '/showcase',
+    name: 'KnowledgeShowcase',
+    component: () => import('@/views/showcase/KnowledgeShowcase.vue'),
+    meta: { fullscreen: true, public: true },
+  },
+  {
+    path: '/team-showcase',
+    name: 'TeamShowcase',
+    component: () => import('@/views/showcase/TeamShowcase.vue'),
+    meta: { fullscreen: true, public: true },
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/team-showcase',
+  },
+]
+
 const router = createRouter({
-  history: createWebHistory(isReportEntry ? '/reports/' : '/knowledge/'),
-  routes: isReportEntry ? reportRoutes : knowledgeRoutes,
+  history: createWebHistory(isReportEntry ? '/reports/' : isShowcaseEntry ? '/' : '/knowledge/'),
+  routes: isReportEntry ? reportRoutes : isShowcaseEntry ? showcaseRoutes : knowledgeRoutes,
 })
 
 router.beforeEach((to, from, next) => {
-  if (import.meta.env.DEV) {
+  if (to.matched.some((record) => record.meta.public)) {
     next()
     return
   }
 
-  if (typeof window !== 'undefined') {
-    const token = window.localStorage.getItem('access_token')
-    if (!token) {
-      window.location.href = '/'
-      return
-    }
-  }
+  // Do not redirect while auth or page data is still restoring. The gateway and
+  // page-level error states handle authorization; keeping the route stable avoids
+  // refresh blank screens and cross-module jump-backs during demos.
   next()
 })
 

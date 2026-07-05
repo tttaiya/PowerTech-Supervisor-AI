@@ -74,6 +74,7 @@ import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import {
   createKnowledgeBase,
   updateKnowledgeBase,
+  type KnowledgeBaseDetailVO,
   type KnowledgeBaseVO,
 } from '@/api/modules/knowledge-base'
 import {
@@ -81,6 +82,12 @@ import {
   KB_CHUNK_STRATEGIES,
   KB_RETRIEVAL_STRATEGIES,
 } from '@/types/knowledge-base'
+import { friendlyEnvelopeMessage, friendlyErrorMessage } from '@/utils/error'
+
+const DEFAULT_SEPARATORS = ['\n\n', '\n', '。', '；', ',', '?', ' ']
+const DEFAULT_SEPARATORS_JSON = JSON.stringify(DEFAULT_SEPARATORS)
+const VALID_RETRIEVAL_STRATEGIES = new Set(KB_RETRIEVAL_STRATEGIES.map((item) => item.value))
+const VALID_CHUNK_STRATEGIES = new Set(KB_CHUNK_STRATEGIES.map((item) => item.value))
 
 const props = defineProps<{
   visible: boolean
@@ -106,12 +113,13 @@ const form = reactive({
   chunkStrategy: 'HEADING',
   chunkSize: 500,
   chunkOverlap: 50,
-  separatorsJson: '[]',
+  separatorsJson: DEFAULT_SEPARATORS_JSON,
   description: '',
   confirmation: false,
 })
 
 const originalStrategy = ref<{ retrievalStrategy: string; chunkStrategy: string; chunkSize: number; chunkOverlap: number; separatorsJson: string } | null>(null)
+const originalForm = ref<{ name: string; category: string; retrievalStrategy: string; chunkStrategy: string; chunkSize: number; chunkOverlap: number; separatorsJson: string; description: string } | null>(null)
 
 const strategyChanged = computed(() => {
   if (props.mode !== 'edit' || !originalStrategy.value) return false
@@ -119,9 +127,9 @@ const strategyChanged = computed(() => {
   return (
     form.retrievalStrategy !== o.retrievalStrategy ||
     form.chunkStrategy !== o.chunkStrategy ||
-    form.chunkSize !== o.chunkSize ||
-    form.chunkOverlap !== o.chunkOverlap ||
-    form.separatorsJson !== o.separatorsJson
+    Number(form.chunkSize) !== o.chunkSize ||
+    Number(form.chunkOverlap) !== o.chunkOverlap ||
+    normalizeSeparatorsJson(form.separatorsJson) !== o.separatorsJson
   )
 })
 
@@ -134,17 +142,28 @@ const rules: FormRules = {
   retrievalStrategy: [{ required: true, message: '请选择检索策略', trigger: 'change' }],
   chunkStrategy: [{ required: true, message: '请选择切片策略', trigger: 'change' }],
   chunkSize: [{ required: true, type: 'number', min: 50, message: '切片大小 ≥ 50', trigger: 'blur' }],
-  chunkOverlap: [{ required: true, type: 'number', min: 0, message: '切片重叠 ≥ 0', trigger: 'blur' }],
+  chunkOverlap: [
+    { required: true, type: 'number', min: 0, message: '切片重叠 ≥ 0', trigger: 'blur' },
+    {
+      validator: (_rule, value, callback) => {
+        if (Number(value) >= Number(form.chunkSize)) {
+          return callback(new Error('切片重叠必须小于切片大小'))
+        }
+        callback()
+      },
+      trigger: 'blur',
+    },
+  ],
   separatorsJson: [
     {
       validator: (_rule, value, callback) => {
-        if (!value) return callback()
+        if (!String(value || '').trim()) return callback()
         try {
-          const parsed = JSON.parse(value)
-          if (!Array.isArray(parsed)) return callback(new Error('必须是 JSON 数组'))
+          const parsed = parseSeparators(value)
+          if (!parsed.length) return callback(new Error('分隔符不能为空数组'))
           callback()
         } catch (e: any) {
-          callback(new Error('JSON 解析失败：' + e.message))
+          callback(new Error(e.message || '分隔符格式不合法'))
         }
       },
       trigger: 'blur',
@@ -154,7 +173,7 @@ const rules: FormRules = {
     {
       validator: (_rule, value, callback) => {
         if (strategyChanged.value && !value) {
-          return callback(new Error('策略变更需勾选确认'))
+          return callback(new Error('请确认已了解策略变更影响'))
         }
         callback()
       },
@@ -170,10 +189,11 @@ function resetForm() {
   form.chunkStrategy = 'HEADING'
   form.chunkSize = 500
   form.chunkOverlap = 50
-  form.separatorsJson = '[]'
+  form.separatorsJson = DEFAULT_SEPARATORS_JSON
   form.description = ''
   form.confirmation = false
   originalStrategy.value = null
+  originalForm.value = null
 }
 
 function loadFromKb() {
@@ -181,23 +201,25 @@ function loadFromKb() {
     resetForm()
     return
   }
-  form.name = props.kb.name
+  const kb = props.kb as KnowledgeBaseDetailVO
+  form.name = props.kb.name || ''
   form.category = props.kb.category
   form.retrievalStrategy = props.kb.retrievalStrategy
   form.chunkStrategy = props.kb.chunkStrategy
   form.chunkSize = props.kb.chunkSize
   form.chunkOverlap = props.kb.chunkOverlap
-  // 编辑时无 separatorsJson（listVO 没暴露）；从 detail 上下文可取，简化处理
-  form.separatorsJson = (props.kb as any).separatorsJson || '[]'
+  form.separatorsJson = normalizeSeparatorsJson(kb.separatorsJson, kb.separators)
   form.description = props.kb.description || ''
   form.confirmation = false
+  const snapshot = currentSnapshot()
   originalStrategy.value = {
     retrievalStrategy: props.kb.retrievalStrategy,
     chunkStrategy: props.kb.chunkStrategy,
     chunkSize: props.kb.chunkSize,
     chunkOverlap: props.kb.chunkOverlap,
-    separatorsJson: (props.kb as any).separatorsJson || '[]',
+    separatorsJson: form.separatorsJson,
   }
+  originalForm.value = snapshot
 }
 
 watch(
@@ -222,39 +244,52 @@ async function onSubmit() {
   } catch {
     return
   }
+  const validationMessage = validateForm()
+  if (validationMessage) {
+    ElMessage.warning(validationMessage)
+    return
+  }
+  const snapshot = currentSnapshot()
+  if (props.mode === 'edit' && originalForm.value && isSameSnapshot(snapshot, originalForm.value)) {
+    ElMessage.info('当前内容未发生变化，无需保存')
+    return
+  }
   if (strategyChanged.value && !form.confirmation) {
-    ElMessage.warning('策略变更需勾选确认')
+    ElMessage.warning('请确认已了解策略变更影响')
     return
   }
   submitting.value = true
   try {
-    const basePayload = {
-      name: form.name,
-      category: form.category,
-      description: form.description,
-    }
     let resp
     if (props.mode === 'create') {
-      resp = await createKnowledgeBase({
-        ...basePayload,
-        retrievalStrategy: form.retrievalStrategy,
-        chunkStrategy: form.chunkStrategy,
-        chunkSize: form.chunkSize,
-        chunkOverlap: form.chunkOverlap,
-        ...optionalSeparatorsJson(),
-      })
+      const payload = {
+        name: snapshot.name,
+        category: snapshot.category,
+        retrievalStrategy: snapshot.retrievalStrategy,
+        chunkStrategy: snapshot.chunkStrategy,
+        chunkSize: snapshot.chunkSize,
+        chunkOverlap: snapshot.chunkOverlap,
+        separatorsJson: snapshot.separatorsJson,
+        description: snapshot.description,
+      }
+      resp = await createKnowledgeBase(payload)
     } else {
-      const payload = strategyChanged.value
-        ? {
-            ...basePayload,
-            retrievalStrategy: form.retrievalStrategy,
-            chunkStrategy: form.chunkStrategy,
-            chunkSize: form.chunkSize,
-            chunkOverlap: form.chunkOverlap,
-            ...optionalSeparatorsJson(),
-            confirmation: form.confirmation,
-          }
-        : basePayload
+      const payload = {
+        id: props.kb!.id,
+        name: snapshot.name,
+        category: snapshot.category,
+        description: snapshot.description,
+        ...(strategyChanged.value
+          ? {
+              retrievalStrategy: snapshot.retrievalStrategy,
+              chunkStrategy: snapshot.chunkStrategy,
+              chunkSize: snapshot.chunkSize,
+              chunkOverlap: snapshot.chunkOverlap,
+              separatorsJson: snapshot.separatorsJson,
+              confirmation: form.confirmation,
+            }
+          : {}),
+      }
       resp = await updateKnowledgeBase(props.kb!.id, payload, form.confirmation || undefined)
     }
     if (resp.code === 0) {
@@ -262,37 +297,86 @@ async function onSubmit() {
         props.mode === 'create'
           ? '创建成功'
           : strategyChanged.value
-            ? '已保存，并已为知识库文档创建 REPROCESS 任务'
-            : '已保存'
+            ? '策略已更新，新的处理策略将在后续文档处理或重处理时生效'
+            : '知识库信息已更新'
       ElMessage.success(successMessage)
       emit('saved')
     } else {
-      ElMessage.error(resp.message || '操作失败')
+      ElMessage.error(friendlyEnvelopeMessage(resp.message, '操作失败'))
     }
-  } catch (e: any) {
-    if (e?.response?.data?.message) {
-      ElMessage.error(e.response.data.message)
-    } else if (e?.message && !e.message.includes('validate')) {
-      ElMessage.error(e.message)
+  } catch (error: any) {
+    if (error?.message && !error.message.includes('validate')) {
+      ElMessage.error(friendlyErrorMessage(error, '操作失败，请稍后重试'))
     }
   } finally {
     submitting.value = false
   }
 }
 
-function optionalSeparatorsJson() {
-  const raw = form.separatorsJson?.trim()
-  if (!raw) {
-    return {}
+function currentSnapshot() {
+  return {
+    name: form.name.trim(),
+    category: form.category,
+    retrievalStrategy: form.retrievalStrategy,
+    chunkStrategy: form.chunkStrategy,
+    chunkSize: Number(form.chunkSize),
+    chunkOverlap: Number(form.chunkOverlap),
+    separatorsJson: normalizeSeparatorsJson(form.separatorsJson),
+    description: (form.description || '').trim(),
   }
+}
+
+function isSameSnapshot(a: NonNullable<typeof originalForm.value>, b: NonNullable<typeof originalForm.value>) {
+  return (
+    a.name === b.name &&
+    a.category === b.category &&
+    a.retrievalStrategy === b.retrievalStrategy &&
+    a.chunkStrategy === b.chunkStrategy &&
+    a.chunkSize === b.chunkSize &&
+    a.chunkOverlap === b.chunkOverlap &&
+    a.separatorsJson === b.separatorsJson &&
+    a.description === b.description
+  )
+}
+
+function validateForm() {
+  const snapshot = currentSnapshot()
+  if (!snapshot.name) return '名称不能为空'
+  if (!snapshot.category) return '分类不能为空'
+  if (!snapshot.retrievalStrategy || !VALID_RETRIEVAL_STRATEGIES.has(snapshot.retrievalStrategy as any)) {
+    return '请选择合法的检索策略'
+  }
+  if (!snapshot.chunkStrategy || !VALID_CHUNK_STRATEGIES.has(snapshot.chunkStrategy as any)) {
+    return '请选择合法的切片策略'
+  }
+  if (!Number.isFinite(snapshot.chunkSize) || snapshot.chunkSize <= 0) return '切片大小必须大于 0'
+  if (!Number.isFinite(snapshot.chunkOverlap) || snapshot.chunkOverlap < 0) return '切片重叠必须大于等于 0'
+  if (snapshot.chunkOverlap >= snapshot.chunkSize) return '切片重叠必须小于切片大小'
   try {
-    const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed) && parsed.length === 0) {
-      return {}
-    }
-  } catch {
-    return {}
+    parseSeparators(snapshot.separatorsJson)
+  } catch (error: any) {
+    return error?.message || '分隔符格式不合法'
   }
-  return { separatorsJson: raw }
+  return ''
+}
+
+function parseSeparators(value?: string) {
+  const raw = String(value || '').trim()
+  if (!raw) return DEFAULT_SEPARATORS
+  const parsed = JSON.parse(raw)
+  if (!Array.isArray(parsed)) throw new Error('分隔符必须是 JSON 数组')
+  if (!parsed.length) throw new Error('分隔符不能为空数组')
+  if (parsed.some((item) => typeof item !== 'string')) {
+    throw new Error('分隔符数组只能包含字符串')
+  }
+  return parsed
+}
+
+function normalizeSeparatorsJson(value?: string, fallback?: string[]) {
+  try {
+    return JSON.stringify(parseSeparators(value || (fallback?.length ? JSON.stringify(fallback) : DEFAULT_SEPARATORS_JSON)))
+  } catch {
+    return DEFAULT_SEPARATORS_JSON
+  }
 }
 </script>

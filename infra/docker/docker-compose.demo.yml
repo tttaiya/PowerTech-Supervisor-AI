@@ -371,6 +371,7 @@ services:
       dockerfile: backend-python/super-biz-agent-service/Dockerfile
     container_name: super-biz-agent-service
     environment:
+      KM_CONSOLE_URL: http://localhost:8080/knowledge/bases
       RETRIEVAL_SEARCH_URL: http://gateway-service:9000/internal/v1/retrieval/search
       DATABASE_URL: sqlite:////data/super_biz_agent.db
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}

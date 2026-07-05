@@ -42,9 +42,9 @@ defineProps({
   border-radius: 12px;
   display: grid;
   place-items: center;
-  background: rgba(61, 139, 255, 0.18);
+  background: rgba(79, 214, 154, 0.12);
   color: var(--pt-brand);
-  box-shadow: inset 0 0 18px rgba(61, 139, 255, 0.4);
+  box-shadow: inset 0 0 18px rgba(79, 214, 154, 0.26);
 }
 .section-title h2 {
   margin: 0;

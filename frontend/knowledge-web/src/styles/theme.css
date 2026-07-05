@@ -152,20 +152,20 @@ a {
 .km-page-fade-enter-active,
 .km-page-fade-leave-active {
   transition:
-    opacity 220ms var(--km-ease-out),
-    transform 220ms var(--km-ease-out),
-    filter 220ms var(--km-ease-out);
+    opacity 350ms var(--km-ease-out),
+    transform 350ms var(--km-ease-out),
+    filter 350ms var(--km-ease-out);
 }
 
 .km-page-fade-enter-from {
   opacity: 0;
-  transform: translateY(14px);
+  transform: translateY(18px) scale(0.992);
   filter: blur(4px);
 }
 
 .km-page-fade-leave-to {
   opacity: 0;
-  transform: translateY(10px);
+  transform: translateY(14px) scale(0.998);
   filter: blur(2px);
 }
 

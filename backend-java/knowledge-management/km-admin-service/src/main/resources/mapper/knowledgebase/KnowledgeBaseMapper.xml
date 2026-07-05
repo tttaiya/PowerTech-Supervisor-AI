@@ -24,6 +24,16 @@
     <result property="updatedAt"         column="updated_at"/>
   </resultMap>
 
+  <resultMap id="SelectableKnowledgeBaseMap" type="com.km.admin.knowledgebase.dto.SelectableKnowledgeBaseDTO">
+    <result property="id"                column="id"/>
+    <result property="name"              column="name"/>
+    <result property="description"       column="description"/>
+    <result property="documentType"      column="document_type"/>
+    <result property="documentCount"     column="document_count"/>
+    <result property="readyDocumentCount" column="ready_document_count"/>
+    <result property="enabled"           column="enabled"/>
+  </resultMap>
+
   <!-- 列表分页查询 -->
   <select id="listByQuery" resultMap="KnowledgeBaseMap">
     SELECT id, name, description, category, retrieval_strategy,
@@ -81,6 +91,23 @@
            <foreach collection="ids" item="id" open="(" close=")" separator=",">
              #{id}
            </foreach>
+  </select>
+
+  <select id="listSelectable" resultMap="SelectableKnowledgeBaseMap">
+    SELECT kb.id,
+           kb.name,
+           kb.description,
+           kb.category AS document_type,
+           COUNT(d.id) AS document_count,
+           COALESCE(SUM(CASE WHEN d.document_status = 'READY' THEN 1 ELSE 0 END), 0) AS ready_document_count,
+           1 AS enabled
+      FROM km_knowledge_base kb
+      LEFT JOIN km_document d
+        ON d.kb_id = kb.id
+       AND d.is_deleted = 0
+     WHERE kb.is_deleted = 0
+     GROUP BY kb.id, kb.name, kb.description, kb.category
+     ORDER BY kb.created_at DESC
   </select>
 
   <insert id="insert" parameterType="com.km.admin.knowledgebase.entity.KnowledgeBase"

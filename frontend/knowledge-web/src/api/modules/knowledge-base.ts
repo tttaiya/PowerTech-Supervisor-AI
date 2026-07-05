@@ -57,6 +57,7 @@ export interface CreateKnowledgeBaseRequest {
 }
 
 export interface UpdateKnowledgeBaseRequest {
+  id?: number
   name?: string
   description?: string
   category?: string

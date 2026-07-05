@@ -19,6 +19,8 @@ class SuperBizAgentApp {
         this.chatHistories = this.loadChatHistories(); // 所有历史对话
         this.isCurrentChatFromHistory = false; // 标记当前对话是否是从历史记录加载的
         this.citationCache = new Map();
+        this.navPending = '';
+        this.authChecking = true;
         
         this.initializeElements();
         this.bindEvents();
@@ -26,6 +28,7 @@ class SuperBizAgentApp {
         this.initMarkdown();
         this.checkAndSetCentered();
         this.renderChatHistory();
+        this.showLoadingOverlay(true, '正在恢复登录状态', '正在校验身份与准备智能问答工作台');
         this.loadCurrentUser();
     }
 
@@ -71,17 +74,28 @@ class SuperBizAgentApp {
     }
 
     async loadCurrentUser() {
-        if (!this.accessToken) {
+        this.authChecking = true;
+        this.showLoadingOverlay(true, '正在恢复登录状态', '正在校验身份与准备智能问答工作台');
+        try {
+            if (!this.accessToken) {
+                this.updateAuthUI(null);
+                return;
+            }
+            const response = await this.apiFetch(`${this.apiBaseUrl}/auth/me`);
+            if (!response.ok) {
+                this.updateAuthUI(null);
+                return;
+            }
+            this.updateAuthUI(await response.json());
+            await this.loadServerConversations();
+        } catch (error) {
+            console.error('恢复登录状态失败:', error);
+            this.showNotification('数据加载失败，请重试', 'error');
             this.updateAuthUI(null);
-            return;
+        } finally {
+            this.authChecking = false;
+            this.showLoadingOverlay(false);
         }
-        const response = await this.apiFetch(`${this.apiBaseUrl}/auth/me`);
-        if (!response.ok) {
-            this.updateAuthUI(null);
-            return;
-        }
-        this.updateAuthUI(await response.json());
-        await this.loadServerConversations();
     }
 
     getUserLabel(user) {
@@ -131,7 +145,7 @@ class SuperBizAgentApp {
             this.loginScreen.style.display = user ? 'none' : 'flex';
         }
         if (this.appLayout) {
-            this.appLayout.style.display = user ? 'flex' : 'none';
+            this.appLayout.style.display = user ? 'grid' : 'none';
         }
         if (!user && this.usernameInput) {
             requestAnimationFrame(() => this.usernameInput.focus());
@@ -153,6 +167,8 @@ class SuperBizAgentApp {
         const secondaryText = this.registerBtn?.textContent;
         if (this.loginBtn) this.loginBtn.disabled = true;
         if (this.registerBtn) this.registerBtn.disabled = true;
+        this.loginBtn?.classList.toggle('is-loading', path === 'login');
+        this.registerBtn?.classList.toggle('is-loading', path === 'register');
         if (this.loginBtn && path === 'login') this.loginBtn.textContent = '登录中...';
         if (this.registerBtn && path === 'register') this.registerBtn.textContent = '注册中...';
 
@@ -163,17 +179,7 @@ class SuperBizAgentApp {
                 body: JSON.stringify({ username, password })
             });
             if (!response.ok) {
-                let errorMessage = path === 'login' ? '登录失败' : '注册失败';
-                try {
-                    const errorPayload = await response.json();
-                    if (errorPayload?.detail) {
-                        errorMessage = typeof errorPayload.detail === 'string'
-                            ? errorPayload.detail
-                            : errorMessage;
-                    }
-                } catch (error) {
-                    console.warn('读取认证错误详情失败:', error);
-                }
+                const errorMessage = await this.readAuthErrorMessage(response, path);
                 this.showNotification(errorMessage, 'error');
                 return;
             }
@@ -184,7 +190,12 @@ class SuperBizAgentApp {
             this.saveTokens(await response.json());
             await this.loadCurrentUser();
             this.showNotification('登录成功', 'success');
+        } catch (error) {
+            console.error('认证请求失败:', error);
+            this.showNotification('网络连接失败，请检查服务是否启动', 'error');
         } finally {
+            this.loginBtn?.classList.remove('is-loading');
+            this.registerBtn?.classList.remove('is-loading');
             if (this.loginBtn) {
                 this.loginBtn.disabled = false;
                 this.loginBtn.textContent = primaryText || '登录工作台';
@@ -194,6 +205,57 @@ class SuperBizAgentApp {
                 this.registerBtn.textContent = secondaryText || '注册并登录';
             }
         }
+    }
+
+    async readAuthErrorMessage(response, path) {
+        let payload = null;
+        try {
+            payload = await response.json();
+        } catch (error) {
+            payload = null;
+        }
+        const fromPayload = this.extractErrorMessage(payload);
+        if (fromPayload) {
+            return fromPayload;
+        }
+        if (response.status >= 500) {
+            return '服务暂时异常，请稍后重试或查看日志';
+        }
+        if (response.status === 401) {
+            return '用户名或密码错误';
+        }
+        if (response.status === 409 || response.status === 400) {
+            return path === 'register' ? '用户已存在，请直接登录' : '请输入用户名和密码';
+        }
+        return path === 'login' ? '登录失败，请检查用户名和密码' : '注册失败，请检查输入信息';
+    }
+
+    extractErrorMessage(payload) {
+        if (!payload) {
+            return '';
+        }
+        if (typeof payload === 'string') {
+            return payload;
+        }
+        if (typeof payload.message === 'string' && payload.message.trim()) {
+            return payload.message;
+        }
+        if (typeof payload.detail === 'string' && payload.detail.trim()) {
+            return payload.detail;
+        }
+        if (Array.isArray(payload.detail) && payload.detail.length) {
+            const first = payload.detail[0];
+            if (typeof first?.msg === 'string') {
+                if (/field required|missing/i.test(first.msg)) {
+                    return '请输入用户名和密码';
+                }
+                return first.msg;
+            }
+        }
+        if (payload.data) {
+            return this.extractErrorMessage(payload.data);
+        }
+        return '';
     }
 
     async logout() {
@@ -246,7 +308,6 @@ class SuperBizAgentApp {
                             }
                         });
                     }
-                    console.log('Markdown 渲染库初始化成功');
                 } catch (e) {
                     console.error('Markdown 配置失败:', e);
                 }
@@ -500,23 +561,24 @@ class SuperBizAgentApp {
             this.citationModalIndex.textContent = `[${citation.index}]`;
         }
         if (this.citationModalDoc) {
-            this.citationModalDoc.textContent = citation.document_name || '未知文档';
+            this.citationModalDoc.textContent = citation.document_name || citation.documentName || citation.docName || '未知文档';
         }
         if (this.citationModalSection) {
-            this.citationModalSection.textContent = citation.section_path || '未标注章节';
+            this.citationModalSection.textContent = citation.section_path || citation.sectionPath || citation.chapterPath || '未标注章节';
         }
         if (this.citationModalVectorScore) {
-            this.citationModalVectorScore.textContent = this.formatCitationScore(citation.vector_score);
+            this.citationModalVectorScore.textContent = this.formatCitationScore(citation.vector_score ?? citation.vectorScore ?? citation.score);
         }
         if (this.citationModalRerankScore) {
-            this.citationModalRerankScore.textContent = this.formatCitationScore(citation.rerank_score);
+            this.citationModalRerankScore.textContent = this.formatCitationScore(citation.rerank_score ?? citation.rerankScore);
         }
         if (this.citationModalContent) {
-            this.citationModalContent.textContent = citation.content_preview || '暂无切片内容';
+            this.citationModalContent.textContent = citation.content_preview || citation.contentPreview || citation.content || citation.text || '暂无切片内容';
         }
         if (this.citationModalDownload) {
-            if (citation.download_url) {
-                this.citationModalDownload.href = citation.download_url;
+            const downloadUrl = citation.download_url || citation.downloadUrl || citation.url;
+            if (downloadUrl) {
+                this.citationModalDownload.href = downloadUrl;
                 this.citationModalDownload.style.display = 'inline-flex';
             } else {
                 this.citationModalDownload.removeAttribute('href');
@@ -561,6 +623,11 @@ class SuperBizAgentApp {
         this.sidebarUserMeta = document.getElementById('sidebarUserMeta');
         this.workspaceStatus = document.getElementById('workspaceStatus');
         this.adminLink = document.getElementById('adminLink');
+        this.heroNewChatBtn = document.getElementById('heroNewChatBtn');
+        this.startQuestionBtn = document.getElementById('startQuestionBtn');
+        this.routeTransition = document.getElementById('routeTransition');
+        this.routeTransitionTitle = document.getElementById('routeTransitionTitle');
+        this.inputProcessBar = document.getElementById('inputProcessBar');
         
         // 输入区域元素
         this.messageInput = document.getElementById('messageInput');
@@ -573,6 +640,7 @@ class SuperBizAgentApp {
         this.chatMessages = document.getElementById('chatMessages');
         this.loadingOverlay = document.getElementById('loadingOverlay');
         this.chatContainer = document.querySelector('.chat-container');
+        this.chatInputContainer = document.querySelector('.chat-input-container');
         this.welcomeGreeting = document.getElementById('welcomeGreeting');
         this.chatHistoryList = document.getElementById('chatHistoryList');
         this.citationModal = document.getElementById('citationModal');
@@ -584,9 +652,19 @@ class SuperBizAgentApp {
         this.citationModalRerankScore = document.getElementById('citationModalRerankScore');
         this.citationModalContent = document.getElementById('citationModalContent');
         this.citationModalDownload = document.getElementById('citationModalDownload');
+        this.citationPanelStatus = document.getElementById('citationPanelStatus');
+        this.citationPanelList = document.getElementById('citationPanelList');
+        this.citationCount = document.getElementById('citationCount');
+        this.citationEmpty = document.getElementById('citationEmpty');
+        this.sessionMetric = document.getElementById('sessionMetric');
+        this.citationMetric = document.getElementById('citationMetric');
+        this.retrievalStatusMetric = document.getElementById('retrievalStatusMetric');
+        this.reportBridgeMetric = document.getElementById('reportBridgeMetric');
         
         // 初始化时检查是否需要居中
         this.checkAndSetCentered();
+        this.renderCitationPanel([]);
+        this.updateQaMetrics();
     }
 
     // 绑定事件监听器
@@ -594,6 +672,14 @@ class SuperBizAgentApp {
         // 新建对话
         if (this.newChatBtn) {
             this.newChatBtn.addEventListener('click', () => this.newChat());
+        }
+        if (this.heroNewChatBtn) {
+            this.heroNewChatBtn.addEventListener('click', () => this.newChat());
+        }
+        if (this.startQuestionBtn) {
+            this.startQuestionBtn.addEventListener('click', () => {
+                this.messageInput?.focus();
+            });
         }
         if (this.loginBtn) {
             this.loginBtn.addEventListener('click', () => this.loginOrRegister('login'));
@@ -615,6 +701,8 @@ class SuperBizAgentApp {
                 }
             });
         });
+
+        this.bindNavigationLinks();
         
         // 兼容旧页面结构：如果存在模式选择器，也统一按流式思考处理。
         if (this.modeSelectorBtn) {
@@ -658,8 +746,24 @@ class SuperBizAgentApp {
             this.messageInput.addEventListener('input', () => {
                 this.messageInput.style.height = 'auto';
                 this.messageInput.style.height = `${Math.min(this.messageInput.scrollHeight, 180)}px`;
+                this.updateUI();
             });
         }
+
+        document.querySelectorAll('.prompt-chip[data-prompt]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const prompt = button.getAttribute('data-prompt') || '';
+                if (!this.messageInput || !prompt) {
+                    return;
+                }
+                this.messageInput.value = prompt;
+                this.messageInput.dispatchEvent(new Event('input'));
+                this.messageInput.focus();
+                button.classList.remove('is-tapped');
+                requestAnimationFrame(() => button.classList.add('is-tapped'));
+                window.setTimeout(() => button.classList.remove('is-tapped'), 420);
+            });
+        });
 
         if (this.chatMessages) {
             this.chatMessages.addEventListener('click', (e) => {
@@ -689,6 +793,94 @@ class SuperBizAgentApp {
             }
         });
         
+    }
+
+    bindNavigationLinks() {
+        const selector = [
+            'a[href="/"]',
+            'a[href^="/knowledge"]',
+            'a[href^="/reports"]',
+            'a[href^="/team-showcase"]',
+            'a[href^="/showcase"]',
+            'a[href^="http://localhost:8080/knowledge"]',
+            'a[href^="http://localhost:8080/reports"]',
+            'a[href^="http://localhost:8080/team-showcase"]',
+            'a[href^="http://localhost:8080/showcase"]',
+        ].join(',');
+        document.querySelectorAll(selector).forEach((link) => {
+            link.addEventListener('click', (event) => {
+                if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                    return;
+                }
+                const href = link.getAttribute('href') || '';
+                const url = new URL(href, window.location.origin);
+                if (url.origin !== window.location.origin) {
+                    return;
+                }
+                event.preventDefault();
+                this.navigateTo(url.pathname + url.search + url.hash, link);
+            });
+        });
+    }
+
+    navigateTo(target, trigger = null) {
+        if (!target || this.navPending) {
+            return;
+        }
+        const targetUrl = new URL(target, window.location.origin);
+        const currentPath = this.normalizePath(window.location.pathname);
+        const targetPath = this.normalizePath(targetUrl.pathname);
+        if (currentPath === targetPath && window.location.search === targetUrl.search && window.location.hash === targetUrl.hash) {
+            this.showNotification('已在当前工作台', 'info');
+            return;
+        }
+        this.navPending = targetUrl.pathname + targetUrl.search + targetUrl.hash;
+        if (trigger) {
+            trigger.classList.add('is-routing');
+            trigger.setAttribute('aria-busy', 'true');
+            if ('disabled' in trigger) {
+                trigger.disabled = true;
+            }
+        }
+        document.body.classList.add('route-pending');
+        this.showRouteTransition(this.getRouteTransitionTitle(targetPath));
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.setTimeout(() => {
+            window.location.href = this.navPending;
+        }, prefersReducedMotion ? 40 : 460);
+    }
+
+    normalizePath(path) {
+        return String(path || '/').replace(/\/+$/, '') || '/';
+    }
+
+    getRouteTransitionTitle(path) {
+        if (path.startsWith('/knowledge/search')) {
+            return '正在进入知识检索';
+        }
+        if (path.startsWith('/knowledge')) {
+            return '正在进入知识管理';
+        }
+        if (path.startsWith('/reports')) {
+            return '正在进入报告工作台';
+        }
+        if (path.startsWith('/team-showcase') || path.startsWith('/showcase')) {
+            return '正在进入团队展示';
+        }
+        return '正在进入智能问答工作台';
+    }
+
+    showRouteTransition(title) {
+        if (this.routeTransitionTitle) {
+            this.routeTransitionTitle.textContent = title;
+        }
+        if (this.routeTransition) {
+            this.routeTransition.hidden = false;
+            this.routeTransition.classList.remove('is-active');
+            requestAnimationFrame(() => this.routeTransition.classList.add('is-active'));
+        } else {
+            this.showLoadingOverlay(true, title, '正在进入目标页面，请稍候');
+        }
     }
 
     // 新建对话
@@ -729,6 +921,7 @@ class SuperBizAgentApp {
         if (this.chatMessages) {
             this.chatMessages.innerHTML = '';
         }
+        this.renderCitationPanel([]);
         
         // 生成新的会话ID
         this.sessionId = this.generateSessionId();
@@ -747,6 +940,7 @@ class SuperBizAgentApp {
         
         // 更新历史对话列表
         this.renderChatHistory();
+        this.updateQaMetrics();
     }
     
     // 保存当前对话到历史记录（新建）
@@ -1093,7 +1287,8 @@ class SuperBizAgentApp {
         
         // 更新发送按钮状态
         if (this.sendButton) {
-            this.sendButton.disabled = false;
+            const hasMessage = Boolean(this.messageInput?.value.trim());
+            this.sendButton.disabled = !this.isStreaming && !hasMessage;
             this.sendButton.title = this.isStreaming ? '停止生成' : '发送';
             this.sendButton.setAttribute('aria-label', this.isStreaming ? '停止生成' : '发送');
             this.sendButton.classList.toggle('is-stopping', this.isStreaming);
@@ -1103,7 +1298,34 @@ class SuperBizAgentApp {
         // 更新输入框状态
         if (this.messageInput) {
             this.messageInput.disabled = this.isStreaming;
-            this.messageInput.placeholder = '问问智能OnCall助手';
+            this.messageInput.placeholder = '输入知识库问题，Enter 发送，Shift + Enter 换行';
+        }
+        if (this.chatContainer) {
+            this.chatContainer.classList.toggle('is-streaming', this.isStreaming);
+        }
+        if (this.chatInputContainer) {
+            this.chatInputContainer.classList.toggle('is-streaming', this.isStreaming);
+        }
+        if (this.inputProcessBar) {
+            this.inputProcessBar.setAttribute('aria-hidden', this.isStreaming ? 'false' : 'true');
+        }
+        this.updateQaMetrics();
+    }
+
+    updateQaMetrics(citationTotal = null) {
+        const hasMessages = this.currentChatHistory.length > 0 || Boolean(this.chatMessages?.querySelector('.message'));
+        const currentCitationTotal = citationTotal ?? Number(this.citationCount?.textContent || 0);
+        if (this.sessionMetric) {
+            this.sessionMetric.textContent = hasMessages ? '已连接' : '未开始';
+        }
+        if (this.citationMetric) {
+            this.citationMetric.textContent = String(Number.isFinite(currentCitationTotal) ? currentCitationTotal : 0);
+        }
+        if (this.retrievalStatusMetric) {
+            this.retrievalStatusMetric.textContent = this.isStreaming ? '生成中' : (hasMessages ? '已完成' : '待提问');
+        }
+        if (this.reportBridgeMetric) {
+            this.reportBridgeMetric.textContent = '可跳转';
         }
     }
 
@@ -1186,11 +1408,107 @@ class SuperBizAgentApp {
         }
         messageElement._citations = citations;
         this.cacheMessageCitations(messageId, citations);
+        this.renderCitationPanel(citations);
         const messageContent = messageElement.querySelector('.message-content');
         if (!messageContent) return;
         messageContent.innerHTML = this.renderMarkdown(content || '');
         this.decorateCitationMarkers(messageContent, citations, messageId);
         this.highlightCodeBlocks(messageContent);
+    }
+
+    normalizeCitationItem(item = {}, index = 0) {
+        const source = item.source || item.document || item.doc || {};
+        const contentSource = item.content || item.content_preview || item.contentPreview || item.text || item.summary || item.snippet || item.chunkContent || item.chunk_text || item.preview || source.content || source.text || '';
+        return {
+            index: item.index || index + 1,
+            knowledge_base: item.knowledge_base || item.knowledgeBase || item.kbName || item.knowledgeBaseName || source.knowledgeBase || source.kbName || '默认知识范围',
+            document_name: item.document_name || item.documentName || item.docName || item.fileName || item.title || source.name || source.title || source.documentName || '未知文档',
+            chunk_id: item.chunk_id || item.chunkId || item.chunkIndex || item.id || source.chunkId || source.chunkIndex || '-',
+            page_no: item.page_no || item.pageNo || item.page || source.pageNo || source.page || '',
+            section_path: item.section_path || item.sectionPath || item.chapterPath || item.path || source.sectionPath || source.chapterPath || '未标注章节',
+            score: item.score ?? item.vector_score ?? item.vectorScore ?? item.rerank_score ?? item.rerankScore ?? '',
+            download_url: item.download_url || item.downloadUrl || item.url || source.downloadUrl || source.url || '',
+            content: contentSource || '暂无切片内容',
+            chunk_index: item.chunk_index || item.chunkIndex || source.chunkIndex || '',
+            source_type: item.source_type || item.sourceType || item.type || source.sourceType || 'knowledge'
+        };
+    }
+
+    extractCitations(payload) {
+        if (Array.isArray(payload)) {
+            return payload;
+        }
+        if (!payload || typeof payload !== 'object') {
+            return [];
+        }
+        return payload.citations || payload.references || payload.sources || payload.chunks || payload.documents || [];
+    }
+
+    renderCitationPanel(payload = []) {
+        const citations = this.extractCitations(payload).map((item, index) => this.normalizeCitationItem(item, index));
+        if (this.citationCount) {
+            this.citationCount.textContent = String(citations.length);
+        }
+        if (this.citationPanelStatus) {
+            this.citationPanelStatus.textContent = citations.length
+                ? `本次回答命中 ${citations.length} 个知识片段，可继续查看原文或进入知识检索。`
+                : '当前回答暂无可展示引用来源';
+        }
+        this.updateQaMetrics(citations.length);
+        if (this.citationEmpty) {
+            this.citationEmpty.style.display = citations.length ? 'none' : 'grid';
+        }
+        if (!this.citationPanelList) {
+            return;
+        }
+        this.citationPanelList.innerHTML = '';
+        citations.forEach((citation) => {
+            const card = document.createElement('article');
+            card.className = 'evidence-item';
+            const scoreText = citation.score === '' || citation.score === null || citation.score === undefined
+                ? '暂无'
+                : this.formatCitationScore(citation.score);
+            card.innerHTML = `
+                <div class="evidence-item__top">
+                    <span>[${this.escapeHtml(String(citation.index))}]</span>
+                    <strong>${this.escapeHtml(citation.document_name)}</strong>
+                </div>
+                <div class="evidence-item__meta">
+                    <span class="evidence-item__badge">${this.escapeHtml(citation.source_type)}</span>
+                    <span>${this.escapeHtml(citation.knowledge_base)}</span>
+                    <span>chunkId ${this.escapeHtml(String(citation.chunk_id))}</span>
+                    <span>chunkIndex ${citation.chunk_index ? this.escapeHtml(String(citation.chunk_index)) : '-'}</span>
+                    <span>pageNo ${citation.page_no ? this.escapeHtml(String(citation.page_no)) : '-'}</span>
+                    <span>score ${this.escapeHtml(scoreText)}</span>
+                </div>
+                <p class="evidence-item__path">${this.escapeHtml(citation.section_path)}</p>
+                <p class="evidence-item__content">${this.escapeHtml(citation.content).slice(0, 180)}</p>
+                <div class="evidence-item__actions">
+                    ${citation.download_url ? `<a href="${this.escapeHtml(citation.download_url)}" target="_blank" rel="noopener noreferrer">查看来源</a>` : '<span>来源详情随回答引用保留</span>'}
+                    <a href="http://localhost:8080/knowledge/search">前往知识检索</a>
+                    <button class="copy-citation-btn" type="button">复制片段</button>
+                </div>
+            `;
+            const copyButton = card.querySelector('.copy-citation-btn');
+            if (copyButton) {
+                copyButton.addEventListener('click', () => this.copyCitationContent(citation.content));
+            }
+            this.citationPanelList.appendChild(card);
+        });
+    }
+
+    async copyCitationContent(content = '') {
+        const text = String(content || '').trim();
+        if (!text) {
+            this.showNotification('暂无可复制的引用片段', 'warning');
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(text);
+            this.showNotification('引用片段已复制', 'success');
+        } catch (error) {
+            this.showNotification('复制失败，请手动选择片段文本', 'warning');
+        }
     }
 
     toggleProcessPanel(panel = this.currentProcessPanel) {
@@ -1378,8 +1696,6 @@ class SuperBizAgentApp {
             }
 
             const data = await response.json();
-            console.log('[sendQuickMessage] 响应数据:', JSON.stringify(data));
-            
             // 统一响应格式：检查 data.code 或 data.message 判断请求是否成功
             if (data.code === 200 || data.message === 'success') {
                 // data.data 是 ChatResponse 对象
@@ -1474,22 +1790,17 @@ class SuperBizAgentApp {
                     for (const line of lines) {
                         if (line.trim() === '') continue;
                         
-                        console.log('[SSE调试] 收到行:', line);
-                        
                         // 解析SSE格式
                         if (line.startsWith('id:')) {
-                            console.log('[SSE调试] 解析到ID');
                             continue;
                         } else if (line.startsWith('event:')) {
                             // 兼容 "event:message" 和 "event: message" 两种格式
                             currentEvent = line.substring(6).trim();
-                            console.log('[SSE调试] 解析到事件类型:', currentEvent);
                             // 注意：后端统一使用 "message" 事件名，真正的类型在 data 的 JSON 中
                             continue;
                         } else if (line.startsWith('data:')) {
                             // 兼容 "data:xxx" 和 "data: xxx" 两种格式
                             const rawData = line.substring(5).trim();
-                            console.log('[SSE调试] 解析到数据, currentEvent:', currentEvent, ', rawData:', rawData);
                             
                             // 兼容旧格式 [DONE] 标记
                             if (rawData === '[DONE]') {
@@ -1502,7 +1813,6 @@ class SuperBizAgentApp {
                             try {
                                 // 尝试解析为 SseMessage 格式的 JSON
                                 const sseMessage = JSON.parse(rawData);
-                                console.log('[SSE调试] 解析JSON成功:', sseMessage);
                                 
                                 if (sseMessage && typeof sseMessage.type === 'string') {
                                     if (sseMessage.type === 'message_created') {
@@ -1520,7 +1830,6 @@ class SuperBizAgentApp {
                                     } else if (sseMessage.type === 'content') {
                                         const content = this.extractSseText(sseMessage.data);
                                         fullResponse += content;
-                                        console.log('[SSE调试] 添加内容:', content);
                                         
                                         // 实时渲染 Markdown
                                         if (assistantMessageElement) {
@@ -1531,7 +1840,6 @@ class SuperBizAgentApp {
                                             this.scrollToBottom();
                                         }
                                     } else if (sseMessage.type === 'done') {
-                                        console.log('[SSE调试] 收到done标记，流结束');
                                         const doneData = sseMessage.data || {};
                                         streamingMessageId = doneData.message_id || streamingMessageId;
                                         streamingCitations = doneData.citations || streamingCitations;
@@ -1560,7 +1868,6 @@ class SuperBizAgentApp {
                                     }
                                 } else {
                                     // 不是标准 SseMessage 格式，尝试兼容处理
-                                    console.log('[SSE调试] 非标准格式，尝试兼容处理');
                                     fullResponse += rawData;
                                     if (assistantMessageElement) {
                                         const messageContent = assistantMessageElement.querySelector('.message-content');
@@ -1571,7 +1878,6 @@ class SuperBizAgentApp {
                                 }
                             } catch (e) {
                                 // JSON 解析失败，尝试兼容旧格式
-                                console.log('[SSE调试] JSON解析失败，使用兼容模式:', e.message);
                                 if (rawData === '') {
                                     fullResponse += '\n';
                                 } else {
@@ -1813,20 +2119,17 @@ class SuperBizAgentApp {
     }
 
     // 显示/隐藏加载遮罩层
-    showLoadingOverlay(show) {
+    showLoadingOverlay(show, title = '处理中，请稍候', subtitle = '后端正在处理，请耐心等待') {
         if (this.loadingOverlay) {
             if (show) {
                 this.loadingOverlay.style.display = 'flex';
-                // 更新文字为通用处理中
                 const loadingText = this.loadingOverlay.querySelector('.loading-text');
                 const loadingSubtext = this.loadingOverlay.querySelector('.loading-subtext');
-                if (loadingText) loadingText.textContent = '处理中，请稍候...';
-                if (loadingSubtext) loadingSubtext.textContent = '后端正在处理，请耐心等待';
-                // 防止页面滚动
+                if (loadingText) loadingText.textContent = title;
+                if (loadingSubtext) loadingSubtext.textContent = subtitle;
                 document.body.style.overflow = 'hidden';
             } else {
                 this.loadingOverlay.style.display = 'none';
-                // 恢复页面滚动
                 document.body.style.overflow = '';
             }
         }

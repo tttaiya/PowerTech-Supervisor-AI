@@ -79,6 +79,19 @@ def extract_process_steps(token_usage: dict | None) -> list[dict]:
     return normalized
 
 
+def resolve_knowledge_base_scope(db: Session, request_ids: list[str] | None) -> list[str]:
+    source_ids = request_ids or SettingsService(db).get("rag.km_default_knowledge_base_ids", [])
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in source_ids or []:
+        kb_id = str(item or "").strip()
+        if not kb_id or kb_id in seen:
+            continue
+        seen.add(kb_id)
+        normalized.append(kb_id)
+    return normalized
+
+
 async def stream_text_chunks(text: str, size: int = 18):
     for index in range(0, len(text), size):
         yield text[index : index + size]
@@ -96,11 +109,15 @@ async def _run_chat(request: ChatRequest, user: User, db: Session) -> dict:
     record_process_step(process_steps, "intent_detection", "success", intent.reason or "已完成意图识别")
     conversations.update_message(user_message, intent=intent.intent)
     db.commit()
-    knowledge_base_ids = request.knowledge_base_ids or []
+    knowledge_base_ids = resolve_knowledge_base_scope(db, request.knowledge_base_ids)
 
     try:
         if intent.intent == "knowledge_qa":
-            rag_result = await RagPipelineService(db).answer(request.question or "", knowledge_base_ids)
+            rag_result = await RagPipelineService(db).answer(
+                request.question or "",
+                knowledge_base_ids,
+                str(user.id),
+            )
             answer = rag_result.answer
             citations = rag_result.citations
             grounded = rag_result.is_knowledge_grounded
@@ -245,7 +262,7 @@ async def chat_stream(request: ChatRequest, user: User = Depends(require_login),
             intent = IntentService(db).detect(request.question or "", request.mode)
             conversations.update_message(user_message, intent=intent.intent)
             db.commit()
-            knowledge_base_ids = request.knowledge_base_ids or []
+            knowledge_base_ids = resolve_knowledge_base_scope(db, request.knowledge_base_ids)
 
             if created:
                 yield sse_event("session_created", session_id=session.id)
@@ -262,7 +279,11 @@ async def chat_stream(request: ChatRequest, user: User = Depends(require_login),
                 yield emit_node_status("terminology_matching", "running", "正在匹配电力术语与规范关键词")
                 yield emit_node_status("terminology_matching", "success", "已完成术语匹配")
                 yield emit_node_status("knowledge_retrieval", "running", "正在召回知识库片段")
-                rag_result = await RagPipelineService(db).answer(request.question or "", knowledge_base_ids)
+                rag_result = await RagPipelineService(db).answer(
+                    request.question or "",
+                    knowledge_base_ids,
+                    str(user.id),
+                )
                 answer = rag_result.answer
                 citations = rag_result.citations
                 grounded = rag_result.is_knowledge_grounded

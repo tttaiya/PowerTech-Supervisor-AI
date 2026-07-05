@@ -29,9 +29,9 @@ defineProps({
   text-transform: uppercase;
 }
 .status-pill--success {
-  background: rgba(55, 242, 177, 0.16);
-  border-color: rgba(55, 242, 177, 0.4);
-  color: #9cfad6;
+  background: rgba(79, 214, 154, 0.16);
+  border-color: rgba(114, 239, 182, 0.4);
+  color: var(--km-green-strong);
 }
 .status-pill--warning {
   background: rgba(255, 183, 85, 0.18);

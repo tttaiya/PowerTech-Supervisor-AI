@@ -20,6 +20,7 @@ DEFAULT_SETTINGS = [
     {"key": "rag.rerank_score_threshold", "value": "0.0", "default_value": "0.0", "value_type": "float", "scope": "rag", "description": "重排序阈值"},
     {"key": "rag.require_keyword_overlap", "value": "false", "default_value": "false", "value_type": "bool", "scope": "rag", "description": "是否强制关键词重叠"},
     {"key": "rag.bound_knowledge_base_ids", "value": "[]", "default_value": "[]", "value_type": "json", "scope": "rag", "description": "默认绑定知识库"},
+    {"key": "rag.km_default_knowledge_base_ids", "value": "[]", "default_value": "[]", "value_type": "json", "scope": "rag", "description": "智能问答默认正式知识库范围"},
     {"key": "rag.allow_fallback_answer", "value": "false", "default_value": "false", "value_type": "bool", "scope": "rag", "description": "允许无资料兜底回答"},
     {"key": "intent.knowledge_terms", "value": "[]", "default_value": "[]", "value_type": "json", "scope": "system", "description": "知识库术语库"},
     {"key": "intent.confidence_threshold", "value": "0.5", "default_value": "0.5", "value_type": "float", "scope": "system", "description": "意图置信度阈值"},
@@ -37,6 +38,12 @@ DEFAULT_SETTINGS = [
     {"key": "llm.timeout_seconds", "value": "30", "default_value": "30", "value_type": "int", "scope": "llm", "description": "超时时间"},
     {"key": "security.access_token_expire_minutes", "value": str(config.access_token_expire_minutes), "default_value": str(config.access_token_expire_minutes), "value_type": "int", "scope": "security", "description": "Access Token 过期分钟"},
 ]
+
+HIDDEN_SETTING_KEYS = {
+    "rag.bound_knowledge_base_ids",
+    "rag.km_default_knowledge_base_ids",
+    "intent.knowledge_terms",
+}
 
 
 def _parse(value: str, value_type: str) -> Any:
@@ -89,7 +96,7 @@ class SettingsService:
 
     def list_settings(self) -> list[SettingView]:
         self.initialize_defaults()
-        return [self._view(row) for row in self.repo.list()]
+        return [self._view(row) for row in self.repo.list() if row.key not in HIDDEN_SETTING_KEYS]
 
     def update(self, key: str, value: Any, user_id: str | None = None) -> SettingView:
         self.initialize_defaults()

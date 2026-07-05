@@ -20,9 +20,9 @@ const emit = defineEmits(['click']);
 
 <style scoped>
 .glow-button :deep(.el-button) {
-  background: linear-gradient(135deg, #37f2b1 0%, #3d8bff 100%);
+  background: linear-gradient(135deg, var(--km-green-strong) 0%, var(--km-green) 52%, var(--km-cyan) 100%);
   border: none;
-  color: #04111f;
+  color: #03110c;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: 12px 22px;
@@ -32,7 +32,7 @@ const emit = defineEmits(['click']);
 }
 .glow-button :deep(.el-button:hover) {
   transform: translateY(-2px);
-  box-shadow: 0 0 24px rgba(61, 139, 255, 0.55);
+  box-shadow: 0 0 24px rgba(79, 214, 154, 0.42);
 }
 .glow-button :deep(.el-button.is-disabled) {
   opacity: 0.6;

@@ -1,16 +1,14 @@
 """Configurable, testable RAG pipeline."""
 
 from dataclasses import dataclass, field
+import inspect
 import re
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.llm_factory import llm_factory
-from app.models.orm.knowledge import KnowledgeBase, KnowledgeChunk, KnowledgeDocument
-from app.repositories.knowledge_repository import KnowledgeRepository
 from app.services.settings_service import SettingsService
 from app.services.vector_search_service import vector_search_service
 
@@ -46,8 +44,13 @@ class RagPipelineService:
         self.reranker = reranker or llm_factory.get_rerank_client(db)
         self.llm = llm
 
-    async def answer(self, question: str, knowledge_base_ids: list[str] | None = None) -> RagResult:
-        chunks = self._deduplicate_chunks(await self.retrieve(question, knowledge_base_ids))
+    async def answer(
+        self,
+        question: str,
+        knowledge_base_ids: list[str] | None = None,
+        user_id: str | None = None,
+    ) -> RagResult:
+        chunks = self._deduplicate_chunks(await self.retrieve(question, knowledge_base_ids, user_id))
         if not chunks:
             if self._setting("rag.allow_fallback_answer", False):
                 from app.services.general_chat_service import GeneralChatService
@@ -60,20 +63,25 @@ class RagPipelineService:
         answer = self._normalize_answer_citations(answer, len(citations))
         return RagResult(answer=answer, chunks=chunks, citations=citations, is_knowledge_grounded=True)
 
-    async def retrieve(self, question: str, knowledge_base_ids: list[str] | None = None) -> list[RetrievedChunk]:
+    async def retrieve(
+        self,
+        question: str,
+        knowledge_base_ids: list[str] | None = None,
+        user_id: str | None = None,
+    ) -> list[RetrievedChunk]:
         top_k = int(self._setting("rag.vector_top_k", 3))
         threshold = float(self._setting("rag.vector_score_threshold", 0.0))
         rerank_top_n = int(self._setting("rag.rerank_top_n", top_k))
         rerank_threshold = float(self._setting("rag.rerank_score_threshold", 0.0))
-        rows = self.vector_search(question, top_k, knowledge_base_ids)
+        rows = self.vector_search(question, top_k, knowledge_base_ids, user_id)
+        if inspect.isawaitable(rows):
+            rows = await rows
         raw_chunks = [self._coerce_chunk(row) for row in rows]
-        chunks = self._validate_chunks_against_db(raw_chunks)
+        chunks = raw_chunks
         chunks = [chunk for chunk in chunks if (not knowledge_base_ids or chunk.knowledge_base_id in knowledge_base_ids)]
         if self._setting("rag.require_keyword_overlap", False):
             chunks = [chunk for chunk in chunks if self._has_query_term_overlap(question, chunk.content)]
         chunks = [chunk for chunk in chunks if chunk.normalized_score >= threshold]
-        if not chunks and self.db is not None:
-            chunks = self._db_chunk_search(question, top_k, knowledge_base_ids)
         if self._setting("rag.retrieval_mode", "vector") == "vector_rerank" and self.reranker and chunks:
             results = await self.reranker.rerank(question, chunks)
             scores = {item.chunk_id: item.score for item in results}
@@ -84,12 +92,20 @@ class RagPipelineService:
             return chunks[:rerank_top_n]
         return self._limit_per_knowledge_base(chunks, top_k, knowledge_base_ids)
 
-    def _default_vector_search(self, question: str, top_k: int, knowledge_base_ids: list[str] | None = None) -> list[Any]:
+    async def _default_vector_search(
+        self,
+        question: str,
+        top_k: int,
+        knowledge_base_ids: list[str] | None = None,
+        user_id: str | None = None,
+    ) -> list[Any]:
         limit = top_k * max(1, len(knowledge_base_ids or []))
-        try:
-            return vector_search_service.search_similar_documents(question, limit, knowledge_base_ids=knowledge_base_ids)
-        except Exception:
-            return []
+        return vector_search_service.search_similar_documents(
+            question,
+            limit,
+            knowledge_base_ids=knowledge_base_ids,
+            user_id=user_id,
+        )
 
     async def _generate_answer(self, question: str, chunks: list[RetrievedChunk]) -> str:
         fallback = f"根据知识库资料，{chunks[0].content} [1]"
@@ -191,121 +207,6 @@ class RagPipelineService:
         suffix = "" if cleaned.endswith(("。", "！", "？", ".", "!", "?", "]")) else " "
         return f"{cleaned}{suffix}[1]"
 
-    def _db_chunk_search(self, question: str, top_k: int, knowledge_base_ids: list[str] | None = None) -> list[RetrievedChunk]:
-        if self.db is None:
-            return []
-        stmt = (
-            select(KnowledgeChunk, KnowledgeDocument, KnowledgeBase)
-            .join(KnowledgeDocument, KnowledgeChunk.document_id == KnowledgeDocument.id)
-            .join(KnowledgeBase, KnowledgeChunk.knowledge_base_id == KnowledgeBase.id)
-            .where(
-                KnowledgeChunk.deleted_at.is_(None),
-                KnowledgeDocument.deleted_at.is_(None),
-                KnowledgeDocument.status == "indexed",
-                KnowledgeBase.status == "enabled",
-            )
-        )
-        if knowledge_base_ids:
-            stmt = stmt.where(KnowledgeChunk.knowledge_base_id.in_(knowledge_base_ids))
-        terms = self._extract_query_terms(question)
-        chunks = []
-        for chunk, document, kb in self.db.execute(stmt).all():
-            searchable_text = self._build_searchable_chunk_text(document.filename, chunk.section_path, chunk.content)
-            normalized_text = self._normalize_match_text(searchable_text)
-            hits = sum(1 for term in terms if self._term_matches_text(term, searchable_text, normalized_text))
-            if terms and hits == 0:
-                continue
-            normalized_score = hits / max(1, len(terms)) if terms else 0.5
-            chunks.append(
-                RetrievedChunk(
-                    content=chunk.content,
-                    chunk_id=chunk.id,
-                    document_id=document.id,
-                    document_name=document.filename,
-                    knowledge_base_id=kb.id,
-                    knowledge_base_name=kb.name,
-                    section_path=chunk.section_path,
-                    raw_score=normalized_score,
-                    normalized_score=normalized_score,
-                    metadata={"retrieval_source": "db_fallback"},
-                )
-            )
-        chunks.sort(key=lambda item: item.normalized_score, reverse=True)
-        return self._limit_per_knowledge_base(chunks, top_k, knowledge_base_ids)
-
-    def _build_searchable_chunk_text(self, document_name: str | None, section_path: str | None, content: str | None) -> str:
-        return " ".join(
-            part.strip().lower()
-            for part in (document_name, section_path, content)
-            if isinstance(part, str) and part.strip()
-        )
-
-    def _normalize_match_text(self, value: str) -> str:
-        if not value:
-            return ""
-        return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", value.lower())
-
-    def _term_matches_text(self, term: str, searchable_text: str, normalized_text: str) -> bool:
-        if not term:
-            return False
-        normalized_term = self._normalize_match_text(term)
-        if term in searchable_text:
-            return True
-        return bool(normalized_term) and normalized_term in normalized_text
-
-    def _validate_chunks_against_db(self, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
-        if self.db is None or not chunks:
-            return chunks
-        external_chunks = [
-            chunk
-            for chunk in chunks
-            if chunk.metadata.get("retrieval_source") == "knowledge_management"
-        ]
-        local_chunks = [
-            chunk
-            for chunk in chunks
-            if chunk.metadata.get("retrieval_source") != "knowledge_management"
-        ]
-        chunk_ids = [chunk.chunk_id for chunk in local_chunks if chunk.chunk_id]
-        if not chunk_ids:
-            return external_chunks
-
-        records = KnowledgeRepository(self.db).list_active_chunk_records_by_ids(chunk_ids)
-        record_map = {
-            chunk.id: (chunk, document, kb)
-            for chunk, document, kb in records
-        }
-        validated: list[RetrievedChunk] = []
-        for item in local_chunks:
-            record = record_map.get(item.chunk_id)
-            if record is None:
-                continue
-            chunk, document, kb = record
-            merged_metadata = {
-                **(item.metadata or {}),
-                "chunk_id": chunk.id,
-                "document_id": document.id,
-                "knowledge_base_id": kb.id,
-                "file_name": document.filename,
-                "section_path": chunk.section_path,
-            }
-            validated.append(
-                RetrievedChunk(
-                    content=chunk.content,
-                    chunk_id=chunk.id,
-                    document_id=document.id,
-                    document_name=document.filename,
-                    knowledge_base_id=kb.id,
-                    knowledge_base_name=kb.name,
-                    section_path=chunk.section_path,
-                    raw_score=item.raw_score,
-                    normalized_score=item.normalized_score,
-                    rerank_score=item.rerank_score,
-                    metadata=merged_metadata,
-                )
-            )
-        return external_chunks + validated
-
     def _extract_query_terms(self, question: str) -> list[str]:
         text = question.lower()
         domain_terms = [
@@ -337,8 +238,7 @@ class RagPipelineService:
             "oom",
             "gc",
         ]
-        matched_terms = self._matched_knowledge_terms(text)
-        terms = matched_terms[:] if matched_terms else [term for term in domain_terms if term in text]
+        terms = [term for term in domain_terms if term in text]
         terms.extend(re.findall(r"[a-z0-9]+(?:/[a-z0-9]+)?", text))
         for token in re.split(r"[\s,，。？?！!：:；;、/()（）]+", text):
             token = re.sub(r"^(告诉我|请问|帮我|说一下|介绍一下)", "", token)
@@ -346,16 +246,6 @@ class RagPipelineService:
             if len(token) >= 2 and token not in terms:
                 terms.append(token)
         return list(dict.fromkeys(terms))
-
-    def _matched_knowledge_terms(self, text: str) -> list[str]:
-        if not self.db:
-            return []
-        terms = SettingsService(self.db).get("intent.knowledge_terms", [])
-        return [
-            term.strip().lower()
-            for term in terms
-            if isinstance(term, str) and term.strip() and term.strip().lower() in text
-        ]
 
     def _has_query_term_overlap(self, question: str, content: str) -> bool:
         terms = self._extract_query_terms(question)
@@ -387,9 +277,9 @@ class RagPipelineService:
         return RetrievedChunk(
             content=content,
             chunk_id=str(metadata.get("chunk_id") or metadata.get("id") or id(row)),
-            document_id=metadata.get("document_id"),
+            document_id=str(metadata.get("document_id")) if metadata.get("document_id") is not None else None,
             document_name=metadata.get("file_name") or metadata.get("source") or "知识库文档",
-            knowledge_base_id=metadata.get("knowledge_base_id"),
+            knowledge_base_id=str(metadata.get("knowledge_base_id")) if metadata.get("knowledge_base_id") is not None else None,
             knowledge_base_name=metadata.get("knowledge_base_name"),
             section_path=metadata.get("section_path"),
             raw_score=raw_score,

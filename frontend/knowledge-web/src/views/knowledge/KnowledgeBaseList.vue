@@ -60,9 +60,9 @@
           <el-input v-model="filter.nameKeyword" placeholder="模糊匹配" clearable class="kb-search-control" />
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="filter.isDeleted" placeholder="全部" clearable class="kb-status-control">
-            <el-option label="活动" :value="0" />
-            <el-option label="已删除" :value="1" />
+          <el-select v-model="filter.isDeleted" placeholder="全部正常" class="kb-status-control">
+            <el-option label="全部正常" :value="0" />
+            <el-option label="已删除 / 回收站" :value="1" />
           </el-select>
         </el-form-item>
         <el-form-item class="kb-filter-actions">
@@ -118,10 +118,12 @@
           <el-table-column prop="updatedAt" label="最近更新" min-width="160">
             <template #default="{ row }">{{ row.updatedAt || row.createdAt }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="150">
+          <el-table-column label="操作" width="220">
             <template #default="{ row }">
               <div class="kb-actions">
                 <el-button v-if="!isDeleted(row)" type="primary" @click="goDetail(row)">进入空间</el-button>
+                <el-button v-if="!isDeleted(row)" @click="openEdit(row)">编辑</el-button>
+                <el-button v-if="!isDeleted(row)" type="danger" plain @click="confirmDelete(row)">删除</el-button>
               </div>
             </template>
           </el-table-column>
@@ -164,21 +166,19 @@ import {
   deleteKnowledgeBase,
   getKnowledgeBaseDetail,
   listKnowledgeBases,
-  reprocessKnowledgeBase,
   type KnowledgeBaseDetailVO,
   type KnowledgeBaseVO,
 } from '@/api/modules/knowledge-base'
 import {
   KB_CATEGORIES,
-  KB_CHUNK_STRATEGIES,
-  KB_RETRIEVAL_STRATEGIES,
 } from '@/types/knowledge-base'
 import KnowledgeBaseFormDialog from '@/components/knowledge/KnowledgeBaseFormDialog.vue'
 import { fetchStatsOverview, type StatsOverview } from '@/api/modules/stats'
+import { friendlyEnvelopeMessage, friendlyErrorMessage } from '@/utils/error'
 
 const router = useRouter()
 
-const filter = reactive<{ category?: string; nameKeyword?: string; isDeleted?: number }>({})
+const filter = reactive<{ category?: string; nameKeyword?: string; isDeleted?: number }>({ isDeleted: 0 })
 const pageNum = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
@@ -220,21 +220,23 @@ async function reload() {
   try {
     const resp = await listKnowledgeBases({
       ...filter,
+      isDeleted: filter.isDeleted ?? 0,
       pageNum: pageNum.value,
       pageSize: pageSize.value,
     })
     if (resp.code !== 0) {
-      ElMessage.error(resp.message || '查询失败')
+      ElMessage.error(friendlyEnvelopeMessage(resp.message, '查询失败'))
       rows.value = []
       total.value = 0
       return
     }
-    rows.value = (resp.data.records || []).map((r) => ({ ...r, _isDeleted: r._isDeleted || r.isDeleted }))
+    const records = (resp.data.records || []).map((r) => ({ ...r, _isDeleted: r._isDeleted || r.isDeleted }))
+    rows.value = (filter.isDeleted ?? 0) === 0 ? records.filter((row) => !isDeleted(row)) : records
     total.value = resp.data.total
     pageNum.value = resp.data.page
     pageSize.value = resp.data.pageSize
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || e?.message || '查询失败')
+  } catch (error) {
+    ElMessage.error(friendlyErrorMessage(error, '查询失败'))
   } finally {
     loading.value = false
   }
@@ -243,7 +245,7 @@ async function reload() {
 function resetFilter() {
   filter.category = undefined
   filter.nameKeyword = undefined
-  filter.isDeleted = undefined
+  filter.isDeleted = 0
   pageNum.value = 1
   reload()
 }
@@ -275,14 +277,11 @@ async function openEdit(row: KnowledgeBaseVO) {
 function onSaved() {
   dialogVisible.value = false
   reload()
+  loadOverview()
 }
 
 function goDetail(row: KnowledgeBaseVO) {
   router.push({ name: 'KnowledgeBaseDetail', params: { kbId: String(row.id) } })
-}
-
-function goDocuments(row: KnowledgeBaseVO) {
-  router.push({ name: 'DocumentList', params: { kbId: String(row.id) } })
 }
 
 async function loadOverview() {
@@ -311,12 +310,20 @@ async function confirmDelete(row: KnowledgeBaseVO) {
   } catch {
     return
   }
-  const resp = await deleteKnowledgeBase(row.id)
-  if (resp.code === 0) {
-    ElMessage.success('已删除')
-    reload()
-  } else {
-    ElMessage.error(resp.message || '删除失败')
+  try {
+    const resp = await deleteKnowledgeBase(row.id)
+    if (resp.code === 0) {
+      rows.value = rows.value.filter((item) => item.id !== row.id)
+      selectedIds.value = selectedIds.value.filter((id) => id !== row.id)
+      total.value = Math.max(0, total.value - 1)
+      ElMessage.success('知识库已删除')
+      await reload()
+      await loadOverview()
+    } else {
+      ElMessage.error(friendlyEnvelopeMessage(resp.message, '删除失败，请稍后重试'))
+    }
+  } catch (error) {
+    ElMessage.error(friendlyErrorMessage(error, '删除失败，请稍后重试'))
   }
 }
 
@@ -339,54 +346,26 @@ async function batchDelete() {
   try {
     const resp = await batchDeleteKnowledgeBases([...selectedIds.value])
     if (resp.code === 0) {
-      ElMessage.success(`已删除 ${count} 个知识库`)
+      const deletedIds = new Set(selectedIds.value)
+      rows.value = rows.value.filter((row) => !deletedIds.has(row.id))
+      total.value = Math.max(0, total.value - deletedIds.size)
       selectedIds.value = []
+      ElMessage.success(`知识库已删除`)
       await reload()
+      await loadOverview()
     } else {
-      ElMessage.error(resp.message || '批量删除失败')
+      ElMessage.error(friendlyEnvelopeMessage(resp.message, '批量删除失败'))
     }
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || e?.message || '批量删除失败')
+  } catch (error) {
+    ElMessage.error(friendlyErrorMessage(error, '批量删除失败'))
   } finally {
     batchDeleting.value = false
-  }
-}
-
-async function confirmReprocess(row: KnowledgeBaseVO) {
-  try {
-    await ElMessageBox.confirm(
-      `将触发对「${row.name}」下所有文档的策略变更（切片+向量化重做）。确认？`,
-      '策略变更',
-      { type: 'warning' },
-    )
-  } catch {
-    return
-  }
-  const resp = await reprocessKnowledgeBase(row.id)
-  if (resp.code === 0) {
-    const taskCount = resp.data?.taskCount || 0
-    const strategyVersion = resp.data?.strategyVersion
-    const message =
-      taskCount > 0
-        ? `已创建 ${taskCount} 个 REPROCESS 任务${strategyVersion ? `（策略版本 v${strategyVersion}）` : ''}`
-        : (resp.data.message || '当前没有可重处理文档')
-    ElMessage.success(message)
-    reload()
-  } else {
-    ElMessage.error(resp.message || '触发失败')
   }
 }
 
 function categoryLabel(v: string) {
   return KB_CATEGORIES.find((c) => c.value === v)?.label || v
 }
-function strategyLabel(v: string) {
-  return KB_RETRIEVAL_STRATEGIES.find((s) => s.value === v)?.label || v
-}
-function chunkStrategyLabel(v: string) {
-  return KB_CHUNK_STRATEGIES.find((s) => s.value === v)?.label || v
-}
-
 function isDeleted(row: KnowledgeBaseVO) {
   return row.isDeleted === 1 || row._isDeleted === 1
 }

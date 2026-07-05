@@ -12,7 +12,7 @@ import os
 
 from app.config import config
 from loguru import logger
-from app.api import admin_dashboard, admin_settings, auth, bad_case, chat, citations, conversations, health
+from app.api import admin_dashboard, admin_rag_scope, admin_settings, auth, bad_case, chat, citations, conversations, health
 from app.auth.permissions import require_login
 from app.db.session import init_db
 
@@ -63,6 +63,7 @@ app.include_router(bad_case.router, prefix="/api", tags=["BadCase复盘"], depen
 app.include_router(admin_settings.router, prefix="/api", tags=["系统配置"])
 app.include_router(admin_dashboard.router, prefix="/api", tags=["运营统计"])
 app.include_router(citations.router, prefix="/api", tags=["引用"])
+app.include_router(admin_rag_scope.router, prefix="/api", tags=["RAG知识库范围"])
 
 # 挂载静态文件
 static_dir = "static"

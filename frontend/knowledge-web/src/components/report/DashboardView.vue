@@ -88,8 +88,8 @@ function renderChart() {
   const x = trend.value.map((item) => item.date);
   const y = trend.value.map((item) => item.count);
   const fillGradient = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-    { offset: 0, color: 'rgba(61, 139, 255, 0.45)' },
-    { offset: 1, color: 'rgba(61, 139, 255, 0.02)' }
+    { offset: 0, color: 'rgba(79, 214, 154, 0.42)' },
+    { offset: 1, color: 'rgba(79, 214, 154, 0.02)' }
   ]);
 
   chart.setOption({
@@ -99,7 +99,7 @@ function renderChart() {
     xAxis: {
       type: 'category',
       data: x.length ? x : ['暂无数据'],
-      axisLine: { lineStyle: { color: 'rgba(174, 197, 255, 0.28)' } },
+      axisLine: { lineStyle: { color: 'rgba(193, 227, 212, 0.24)' } },
       axisTick: { show: false },
       axisLabel: { color: '#94a3b8', fontSize: 12 }
     },
@@ -118,11 +118,11 @@ function renderChart() {
         smooth: true,
         showSymbol: false,
         symbol: 'circle',
-        lineStyle: { width: 3, color: '#3d8bff' },
-        itemStyle: { color: '#37f2b1' },
+        lineStyle: { width: 3, color: '#72efb6' },
+        itemStyle: { color: '#71d7ff' },
         areaStyle: { color: fillGradient },
         data: y.length ? y : [0],
-        color: '#3d8bff'
+        color: '#72efb6'
       }
     ]
   });

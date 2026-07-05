@@ -90,10 +90,10 @@ watch(
 }
 
 .report-id-select :deep(.el-input__wrapper.is-focus) {
-  border-color: rgba(61, 139, 255, 0.55);
+  border-color: rgba(114, 239, 182, 0.55);
 }
 
 .report-id-select :deep(.el-input__wrapper:hover) {
-  border-color: rgba(61, 139, 255, 0.38);
+  border-color: rgba(114, 239, 182, 0.38);
 }
 </style>
